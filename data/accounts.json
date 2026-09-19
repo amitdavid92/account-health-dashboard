@@ -1,0 +1,130 @@
+[
+  {
+    "company_name": "Corvus Security",
+    "domain": "corvussec.com",
+    "plan_tier": "Enterprise",
+    "contract_start_date": "2024-02-19",
+    "arr_usd": 175000,
+    "csm_owner": "Dana Okafor"
+  },
+  {
+    "company_name": "Kestrel Labs",
+    "domain": "kestrel-labs.io",
+    "plan_tier": "Enterprise",
+    "contract_start_date": "2023-11-03",
+    "arr_usd": 210000,
+    "csm_owner": "Dana Okafor"
+  },
+  {
+    "company_name": "Northwind Analytics",
+    "domain": "northwind-analytics.com",
+    "plan_tier": "Enterprise",
+    "contract_start_date": "2024-06-11",
+    "arr_usd": 148000,
+    "csm_owner": "Ravi Menon"
+  },
+  {
+    "company_name": "Orcus Retail Group",
+    "domain": "orcusretail.com",
+    "plan_tier": "Pro",
+    "contract_start_date": "2024-09-27",
+    "arr_usd": 34000,
+    "csm_owner": "Ravi Menon"
+  },
+  {
+    "company_name": "Lumen Dental",
+    "domain": "lumendental.co",
+    "plan_tier": "Pro",
+    "contract_start_date": "2025-01-14",
+    "arr_usd": 22000,
+    "csm_owner": "Priya Shah"
+  },
+  {
+    "company_name": "Quarry Software",
+    "domain": "quarry.dev",
+    "plan_tier": "Pro",
+    "contract_start_date": "2025-03-02",
+    "arr_usd": 37000,
+    "csm_owner": "Priya Shah"
+  },
+  {
+    "company_name": "Halden Medical",
+    "domain": "haldenmedical.com",
+    "plan_tier": "Enterprise",
+    "contract_start_date": "2024-04-30",
+    "arr_usd": 96000,
+    "csm_owner": "Ravi Menon"
+  },
+  {
+    "company_name": "Ostara Bio",
+    "domain": "ostarabio.com",
+    "plan_tier": "Enterprise",
+    "contract_start_date": "2024-08-08",
+    "arr_usd": 118000,
+    "csm_owner": "Dana Okafor"
+  },
+  {
+    "company_name": "Ardent Logistics",
+    "domain": "ardentlogistics.com",
+    "plan_tier": "Enterprise",
+    "contract_start_date": "2023-07-21",
+    "arr_usd": 132000,
+    "csm_owner": "Priya Shah"
+  },
+  {
+    "company_name": "Thornbury Media",
+    "domain": "thornburymedia.com",
+    "plan_tier": "Pro",
+    "contract_start_date": "2024-10-05",
+    "arr_usd": 41000,
+    "csm_owner": "Dana Okafor"
+  },
+  {
+    "company_name": "Petra Civil",
+    "domain": "petracivil.com",
+    "plan_tier": "Pro",
+    "contract_start_date": "2025-02-11",
+    "arr_usd": 19000,
+    "csm_owner": "Ravi Menon"
+  },
+  {
+    "company_name": "Fenwick Partners",
+    "domain": "fenwickpartners.law",
+    "plan_tier": "Free",
+    "contract_start_date": "2025-05-19",
+    "arr_usd": 0,
+    "csm_owner": "Unassigned"
+  },
+  {
+    "company_name": "Sable & Roe",
+    "domain": "sableroe.com",
+    "plan_tier": "Free",
+    "contract_start_date": "2025-06-30",
+    "arr_usd": 0,
+    "csm_owner": "Unassigned"
+  },
+  {
+    "company_name": "Vantage Freight",
+    "domain": "vantagefreight.com",
+    "plan_tier": "Pro",
+    "contract_start_date": "2024-12-08",
+    "arr_usd": 28000,
+    "csm_owner": "Priya Shah"
+  },
+  {
+    "company_name": "Brightline Tutors",
+    "domain": "brightlinetutors.org",
+    "plan_tier": "Free",
+    "contract_start_date": "2026-08-22",
+    "arr_usd": 0,
+    "csm_owner": "Unassigned"
+  },
+  {
+    "company_name": "Mint Hill Schools",
+    "domain": "minthill.k12.us",
+    "plan_tier": "Pro",
+    "contract_start_date": "2024-03-17",
+    "arr_usd": 16000,
+    "csm_owner": "Ravi Menon"
+  }
+]
