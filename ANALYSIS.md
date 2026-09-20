@@ -331,3 +331,31 @@ presence with no value in it, and no amount of total-event counting would have s
 - **No outcomes.** Nothing here has been validated against an account that actually churned. The model is defensible, not proven.
 - **Seats are unknown.** "Active users out of known users" uses observed users as the denominator, not licensed seats, so true penetration cannot be measured.
 - **Silence is ambiguous.** A dead pipeline and a dead customer look identical in this data. That is why no-data is its own tier and why ingestion-freshness monitoring is second on the production list.
+
+---
+
+## 12. Assumptions
+
+1. **`company_name` joins the two files.** Verified exactly 1:1 on this snapshot. The join still runs through a canonicalization step (case, whitespace, punctuation, legal suffixes) so the assumption is explicit and a fuzzy matcher can replace it in one place.
+2. **`accounts.json` is the commercial source of truth** for plan and ARR. `plan_tier` on an event is historical state; disagreement is surfaced, never silently resolved.
+3. **The account is the unit of health.** Workspaces roll up; users are deduplicated across them (unnecessary on this data, where the sets are disjoint, but the code does it anyway).
+4. **"Today" is the latest event timestamp (2026-09-13), not wall-clock time.** Otherwise every account would drift into dormancy and the demo would rot.
+5. **The 90-day window is all the history there is.** Trend is strictly within-window; there is no pre-window baseline to compare against.
+6. **`guide_created` and `guide_shared` are the product's core value.** This is the most product-opinionated assumption in the model and the one most worth challenging — it is what makes Cedarline Insurance At Risk despite a healthy-looking event count.
+7. **Absence of events means absence of usage, not a broken pipeline.** Untestable from a single snapshot, which is why a zero-event account is `No Data` rather than `At Risk`.
+
+## 13. Open questions (product decisions, not data ones)
+
+1. Should a **Free** account be scored on the same axis as an Enterprise one, or is "health" for a free account really conversion likelihood? The four highest-usage accounts here are free and worth $0.
+2. Is `guide_viewed` value delivered (an audience exists) or noise (one person scrolling)? It is 34% of all events and the Depth pillar currently ignores it.
+3. What is the real churn window? These thresholds are **calibrated** to split this portfolio usefully. With historical churn outcomes they would be **fitted** instead.
+4. Should CSM ownership feed priority? The data supports it — four CSMs hold 5–7 accounts each, very unevenly distributed by ARR.
+
+## 14. What I'd build next for production
+
+1. **Fit the thresholds instead of calibrating them.** Everything here is a defensible guess. With 12 months of renewal outcomes, the bands become a logistic fit and the pillars get weights that mean something — while keeping the "score = sum of stated reasons" contract, which is the part worth protecting.
+2. **Ingestion-freshness monitoring per workspace.** Assumption 7 is the dangerous one: today a broken pipeline and a churning customer look identical. A per-workspace last-seen heartbeat separates them before a CSM makes a call based on silence that was ours, not theirs.
+3. **Track verdict changes over time.** The UI's "score 30 days ago" comparison (`src/lib/history.ts`) gets there today by re-running the pipeline on an earlier snapshot on every request — a fine trick for one comparison point on 480 events, and not how this should work at real volume or for more than two points in time. The single most useful thing a CSM wants and a re-run can't give: *"three accounts dropped out of Healthy this week."* That needs the pipeline to run on a schedule and persist each verdict, not recompute history live.
+4. **Close the loop.** Let CSMs mark a risk as acknowledged or wrong, and store it. Those annotations are both the UX fix for false positives and the labelled training data that step 1 needs.
+5. **Scale the data layer.** SQLite and a full rebuild are right for 480 events and honest about it. At real volume this becomes an incremental warehouse job with the same stage boundaries — the pure functions move; nothing else about the model has to.
+6. **A memory-backed chat, not just a stateless one.** "Ask the data" (see the README) resends plain text history and re-derives everything fresh each turn — correct at 25 accounts, but a longer investigation ("compare this to what we discussed about Redwood last week") would want the tool results themselves persisted, not just the prose summary of them.
