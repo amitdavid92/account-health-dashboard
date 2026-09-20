@@ -13,6 +13,7 @@
     "test": "tsx scripts/ingest.ts > /dev/null && tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8"

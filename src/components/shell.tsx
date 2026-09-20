@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { TIER_STYLE, money } from "@/lib/ui";
 import { Logo } from "./Logo";
 import { DataNotesDrawer, SearchBox, SelectFilter, ThemeToggle } from "./chrome";
+import { ChatAssistant } from "./chat";
 import { getFilterOptions, getPortfolioKpis, getQualityReport } from "@/lib/db";
 import type { HealthTier } from "@/lib/types";
 
@@ -145,6 +146,7 @@ export function Shell({
             />
           </Suspense>
           <DataNotesDrawer notes={notes} />
+          <ChatAssistant />
           <ThemeToggle />
         </header>
 
