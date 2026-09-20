@@ -6,7 +6,7 @@ import { TrendChart } from "@/components/trend-chart";
 import { getAccountDetail, getRawData } from "@/lib/db";
 import { scoresThirtyDaysAgo } from "@/lib/history";
 import { trendFor } from "@/lib/pipeline";
-import { TIER_STYLE, silenceLabel } from "@/lib/ui";
+import { SEVERITY_STYLE, TIER_STYLE, silenceLabel } from "@/lib/ui";
 import { WINDOW } from "@/lib/config";
 import type { AccountSummary, EventType, HealthTier } from "@/lib/types";
 
@@ -380,14 +380,7 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[slug
               >
                 <span
                   className="mt-[5px] inline-block h-2 w-2 justify-self-center rounded-full"
-                  style={{
-                    background:
-                      r.severity === "Critical"
-                        ? "var(--crit)"
-                        : r.severity === "Low"
-                          ? "var(--none)"
-                          : "var(--warn)",
-                  }}
+                  style={{ background: SEVERITY_STYLE[r.severity].mark }}
                 />
                 <span className="text-[12.5px]">
                   {r.title}

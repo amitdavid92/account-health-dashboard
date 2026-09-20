@@ -12,6 +12,7 @@
 import { WINDOW } from "./config";
 import {
   EVENT_TYPES,
+  PLAN_RANK,
   type AccountMetrics,
   type EventCounts,
   type PlanTier,
@@ -211,7 +212,7 @@ export function computeMetrics(
     workspaceCount: wsGroups.size,
     workspaces,
     planAtLastEvent: last.planTierAtEvent,
-    planDowngraded: last.planTierAtEvent !== contractedPlan,
+    planDowngraded: PLAN_RANK[last.planTierAtEvent] < PLAN_RANK[contractedPlan],
   };
 }
 

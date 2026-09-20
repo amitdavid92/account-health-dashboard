@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { TIER_STYLE } from "@/lib/ui";
+import { TIER_STYLE, money } from "@/lib/ui";
 import { Logo } from "./Logo";
 import { DataNotesDrawer, SearchBox, SelectFilter, ThemeToggle } from "./chrome";
 import { getFilterOptions, getPortfolioKpis, getQualityReport } from "@/lib/db";
@@ -152,11 +152,4 @@ export function Shell({
       </div>
     </div>
   );
-}
-
-function money(v: number): string {
-  if (v === 0) return "$0";
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(v >= 1e7 ? 0 : 2).replace(/\.00$/, "")}M`;
-  if (v >= 1e4) return `$${Math.round(v / 1e3)}K`;
-  return `$${v.toLocaleString("en-US")}`;
 }

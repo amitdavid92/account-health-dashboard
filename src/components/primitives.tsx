@@ -1,5 +1,7 @@
 import type { HealthTier, PillarResult, RiskSeverity } from "@/lib/types";
-import { SEVERITY_STYLE, TIER_STYLE } from "@/lib/ui";
+import { SEVERITY_STYLE, TIER_STYLE, initialsOf, money } from "@/lib/ui";
+
+export { initialsOf, money };
 
 /**
  * Each tier carries a distinct glyph as well as its colour. Green and amber
@@ -81,24 +83,6 @@ export function SeverityChip({ severity }: { severity: RiskSeverity }) {
       {severity}
     </span>
   );
-}
-
-export function money(v: number): string {
-  if (v === 0) return "$0";
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(v >= 1e7 ? 0 : 2).replace(/\.00$/, "")}M`;
-  if (v >= 1e4) return `$${Math.round(v / 1e3)}K`;
-  return `$${v.toLocaleString("en-US")}`;
-}
-
-export function initialsOf(name: string): string {
-  return name
-    .replace(/[^A-Za-z ]/g, "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
 }
 
 export function Card({

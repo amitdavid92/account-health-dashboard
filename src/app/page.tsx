@@ -76,7 +76,9 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const prior = scoresThirtyDaysAgo(raw.accounts, raw.events, raw.snapshotMs);
   const deltaOf = (a: AccountListRow): number | null => {
     const before = prior.get(a.slug);
-    return before === null || before === undefined ? null : a.score - before;
+    return before === null || before === undefined || a.tier === "No Data"
+      ? null
+      : a.score - before;
   };
   const movers = all
     .map((a) => ({ a, delta: deltaOf(a) }))

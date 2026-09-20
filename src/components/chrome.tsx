@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { QualityIssue } from "@/lib/types";
+import { QUALITY_STYLE } from "@/lib/ui";
 
 export function ThemeToggle() {
   /**
@@ -201,14 +202,7 @@ export function DataNotesDrawer({ notes }: { notes: QualityIssue[] }) {
                 <span
                   aria-hidden
                   className="h-[6px] w-[6px] shrink-0 rounded-full"
-                  style={{
-                    background:
-                      n.severity === "error"
-                        ? "var(--crit)"
-                        : n.severity === "warning"
-                          ? "var(--warn)"
-                          : "var(--good)",
-                  }}
+                  style={{ background: QUALITY_STYLE[n.severity].mark }}
                 />
                 <span className="text-[12.5px] font-medium">{n.title}</span>
                 {n.count > 0 && (

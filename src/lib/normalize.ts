@@ -105,10 +105,11 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
     const planTier = VALID_PLANS.has(raw.plan_tier as PlanTier)
       ? (raw.plan_tier as PlanTier)
       : "Free";
-    const arr =
+    const arrRaw =
       typeof raw.arr_usd === "number" && Number.isFinite(raw.arr_usd)
         ? raw.arr_usd
         : Number(raw.arr_usd) || 0;
+    const arr = Math.max(0, arrRaw);
 
     const account: Account = {
       slug: slugify(companyName),
@@ -161,7 +162,10 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
     }
 
     // A replayed row with a fresh id is still the same thing happening once.
-    const signature = `${raw.workspace_id}|${raw.user_id}|${raw.event_type}|${raw.timestamp}`;
+    // Keyed on the parsed timestamp, not the raw string, so equivalent
+    // timestamps in different formats (e.g. with/without milliseconds) still
+    // collide as the same event.
+    const signature = `${raw.workspace_id}|${raw.user_id}|${raw.event_type}|${timestampMs}`;
     if (seenSignatures.has(signature)) {
       duplicateRows += 1;
       continue;

@@ -32,6 +32,13 @@ export function TrendChart({
   const [hover, setHover] = useState<number | null>(null);
 
   const n = weekly.length;
+  if (n === 0) {
+    return (
+      <div className="flex h-[190px] items-center justify-center px-3 pb-3 pt-2 text-[12px] text-ink-3">
+        No activity to chart
+      </div>
+    );
+  }
   const max = Math.max(...weekly, 1);
   /* Divisible by 4 so the 0 / mid / max ticks are all whole numbers: with a
      max of 5 the midpoint gridline sat at 2.5 but was labelled "3". */

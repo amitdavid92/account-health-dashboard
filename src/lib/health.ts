@@ -179,7 +179,7 @@ export function tierFromScore(score: number): HealthTier {
 function collectOverrides(m: AccountMetrics): HealthOverride[] {
   const overrides: HealthOverride[] = [];
 
-  if (m.daysSinceLastEvent !== null && m.daysSinceLastEvent >= OVERRIDES.dormantDays) {
+  if (m.daysSinceLastEvent !== null && m.daysSinceLastEvent > OVERRIDES.dormantDays) {
     overrides.push({
       code: "dormant",
       reason: `No activity for ${plural(m.daysSinceLastEvent, "day")}. A customer that has not opened the product in a month is at risk regardless of how it looked before that.`,

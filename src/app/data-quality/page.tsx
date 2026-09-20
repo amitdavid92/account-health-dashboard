@@ -11,14 +11,9 @@
 import Link from "next/link";
 import { Card } from "@/components/primitives";
 import { getQualityReport } from "@/lib/db";
+import { QUALITY_STYLE } from "@/lib/ui";
 
 export const metadata = { title: "Data quality — Account Health" };
-
-const MARK = {
-  info: { glyph: "✓", colour: "var(--good)", label: "Clean" },
-  warning: { glyph: "!", colour: "var(--warn)", label: "Handled" },
-  error: { glyph: "✕", colour: "var(--crit)", label: "Excluded" },
-} as const;
 
 export default function DataQualityPage() {
   const report = getQualityReport();
@@ -68,7 +63,7 @@ export default function DataQualityPage() {
 
       <ul className="flex flex-col gap-3">
         {report.issues.map((issue) => {
-          const mark = MARK[issue.severity];
+          const mark = QUALITY_STYLE[issue.severity];
           const affected = issue.affectedAccounts ?? [];
           return (
             <li key={issue.code}>
@@ -77,14 +72,14 @@ export default function DataQualityPage() {
                   <span
                     aria-hidden
                     className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold"
-                    style={{ background: "var(--inset)", color: mark.colour }}
+                    style={{ background: "var(--inset)", color: mark.mark }}
                   >
                     {mark.glyph}
                   </span>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <h2 className="text-[13px] font-medium">{issue.title}</h2>
-                      <span className="text-[11px]" style={{ color: mark.colour }}>
+                      <span className="text-[11px]" style={{ color: mark.mark }}>
                         {mark.label}
                       </span>
                       {issue.count > 0 && (

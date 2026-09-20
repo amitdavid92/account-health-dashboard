@@ -27,6 +27,7 @@
  */
 
 import {
+  OVERRIDES,
   RISK_THRESHOLDS,
   SEVERITY_RULES,
   TREND,
@@ -136,7 +137,7 @@ export function detectRisks(
   }
 
   // -- Single-user dependency ---------------------------------------------
-  if (m.activeUsersRecent === 1) {
+  if (m.activeUsersRecent > 0 && m.activeUsersRecent <= OVERRIDES.singleUserMax) {
     drafts.push({
       code: "single_user",
       title: "Single-user dependency",
