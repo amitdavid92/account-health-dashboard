@@ -1,26 +1,243 @@
 @import "tailwindcss";
 
+/**
+ * Design tokens.
+ *
+ * Neutrals are the zinc family (cool, so they sit well under a blue accent).
+ * One accent hue carries both chrome and data marks. Green/amber/red are
+ * reserved for health state and never used decoratively.
+ *
+ * Status colours ship with a label and the numeric score everywhere they
+ * appear, never colour alone: a green/amber/red scale collapses under
+ * protanopia (green and amber measure CVD ΔE 4.7), so hue is redundant
+ * reinforcement here, not the channel carrying the meaning - each status also
+ * carries a distinct glyph (see primitives.tsx).
+ *
+ * Each status has a separate darker/lighter *text* step from its *mark* step,
+ * because the mark colours do not clear 4.5:1 as text on their own surface.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Sampled from the supplied Guidde wordmark asset (public/brand/guidde.png),
+     not guessed. Scoped to the logotype only - the product's own red is not
+     reused as the accent or status colours, which follow the adopted design
+     system's blue/green/amber/red scale instead. */
+  --brand: #cc0001;
+
+  --canvas: #fafafa;
+  --surface: #ffffff;
+  --inset: #f6f6f7;
+  --hairline: rgba(24, 24, 27, 0.09);
+  --hairline-strong: rgba(24, 24, 27, 0.16);
+
+  --ink: #18181b;
+  --ink-2: #52525b;
+  --ink-3: #6f6f78;
+
+  --accent: #2a78d6;
+  --accent-ink: #1d5fae;
+  --accent-wash: rgba(42, 120, 214, 0.1);
+
+  --good: #0ca30c;
+  --good-ink: #166534;
+  --good-wash: rgba(12, 163, 12, 0.12);
+
+  --warn: #fab219;
+  --warn-ink: #92400e;
+  --warn-wash: rgba(250, 178, 25, 0.2);
+
+  --crit: #d03b3b;
+  --crit-ink: #b91c1c;
+  --crit-wash: rgba(208, 59, 59, 0.12);
+
+  --none: #8b8b94;
+  --none-ink: #52525b;
+  --none-wash: rgba(113, 113, 122, 0.11);
+
+  --grid: #ececef;
+  --track: #ebebee;
+  --card-shadow: 0 1px 2px rgba(24, 24, 27, 0.05);
+
+  /* Event-mix categorical hues: a fixed validated order, never cycled, and
+     deliberately distinct from the status colours so a series can't read as
+     a state. login stays grey on purpose - an account that is all logins
+     should look empty, not colourful. */
+  --mix-guide_created: #2a78d6;
+  --mix-guide_viewed: #eb6834;
+  --mix-guide_shared: #1baf7a;
+  --mix-user_invited: #4a3aa7;
+  --mix-login: #8b8b94;
+
+  color-scheme: light;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --brand: #ff4033;
+
+    --canvas: #09090b;
+    --surface: #141417;
+    --inset: #1a1a1f;
+    --hairline: rgba(255, 255, 255, 0.09);
+    --hairline-strong: rgba(255, 255, 255, 0.17);
+
+    --ink: #f4f4f5;
+    --ink-2: #a1a1aa;
+    --ink-3: #8b8b94;
+
+    --accent: #3987e5;
+    --accent-ink: #7aa9f0;
+    --accent-wash: rgba(57, 135, 229, 0.16);
+
+    --good: #22c55e;
+    --good-ink: #4ade80;
+    --good-wash: rgba(12, 163, 12, 0.18);
+
+    --warn: #fab219;
+    --warn-ink: #fbbf24;
+    --warn-wash: rgba(250, 178, 25, 0.16);
+
+    --crit: #ef4a4a;
+    --crit-ink: #f87171;
+    --crit-wash: rgba(208, 59, 59, 0.2);
+
+    --none: #71717a;
+    --none-ink: #a1a1aa;
+    --none-wash: rgba(161, 161, 170, 0.12);
+
+    --grid: #26262b;
+    --track: #26262b;
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+    --mix-guide_created: #3987e5;
+    --mix-guide_viewed: #d95926;
+    --mix-guide_shared: #199e70;
+    --mix-user_invited: #9085e9;
+    --mix-login: #71717a;
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --brand: #ff4033;
+
+  --canvas: #09090b;
+  --surface: #141417;
+  --inset: #1a1a1f;
+  --hairline: rgba(255, 255, 255, 0.09);
+  --hairline-strong: rgba(255, 255, 255, 0.17);
+
+  --ink: #f4f4f5;
+  --ink-2: #a1a1aa;
+  --ink-3: #8b8b94;
+
+  --accent: #3987e5;
+  --accent-ink: #7aa9f0;
+  --accent-wash: rgba(57, 135, 229, 0.16);
+
+  --good: #22c55e;
+  --good-ink: #4ade80;
+  --good-wash: rgba(12, 163, 12, 0.18);
+
+  --warn: #fab219;
+  --warn-ink: #fbbf24;
+  --warn-wash: rgba(250, 178, 25, 0.16);
+
+  --crit: #ef4a4a;
+  --crit-ink: #f87171;
+  --crit-wash: rgba(208, 59, 59, 0.2);
+
+  --none: #71717a;
+  --none-ink: #a1a1aa;
+  --none-wash: rgba(161, 161, 170, 0.12);
+
+  --grid: #26262b;
+  --track: #26262b;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  --mix-guide_created: #3987e5;
+  --mix-guide_viewed: #d95926;
+  --mix-guide_shared: #199e70;
+  --mix-user_invited: #9085e9;
+  --mix-login: #71717a;
+
+  color-scheme: dark;
+}
+
+/* `inline` so the utilities reference the custom properties directly and the
+   theme swaps at runtime without regenerating classes. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+
+  --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-good-wash: var(--good-wash);
+
+  --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
+  --color-warn-wash: var(--warn-wash);
+
+  --color-crit: var(--crit);
+  --color-crit-ink: var(--crit-ink);
+  --color-crit-wash: var(--crit-wash);
+
+  --color-none: var(--none);
+  --color-none-ink: var(--none-ink);
+  --color-none-wash: var(--none-wash);
+
+  --color-grid: var(--grid);
+  --color-track: var(--track);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Digits that sit in columns must line up; large standalone figures should
+   not, because tabular figures look loose at display sizes. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
