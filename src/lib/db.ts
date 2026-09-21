@@ -335,7 +335,8 @@ function toListRow(r: Row): AccountListRow {
 
 export interface AccountFilters {
   tier?: string;
-  plan?: string;
+  /** One plan, several (OR'd together), or omitted for all plans. */
+  plan?: string | string[];
   csm?: string;
   risk?: string;
   search?: string;
@@ -358,9 +359,10 @@ export function listAccounts(filters: AccountFilters = {}): AccountListRow[] {
     where.push("h.tier = ?");
     params.push(filters.tier);
   }
-  if (filters.plan) {
-    where.push("a.plan_tier = ?");
-    params.push(filters.plan);
+  const plans = Array.isArray(filters.plan) ? filters.plan : filters.plan ? [filters.plan] : [];
+  if (plans.length > 0) {
+    where.push(`a.plan_tier IN (${plans.map(() => "?").join(",")})`);
+    params.push(...plans);
   }
   if (filters.csm) {
     where.push("a.csm_owner = ?");

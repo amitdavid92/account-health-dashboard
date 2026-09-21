@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { TIER_STYLE, money } from "@/lib/ui";
 import { Logo } from "./Logo";
-import { DataNotesDrawer, SearchBox, SelectFilter, ThemeToggle } from "./chrome";
+import { DataNotesDrawer, MultiSelectFilter, SearchBox, SelectFilter, ThemeToggle } from "./chrome";
 import { ChatAssistant } from "./chat";
 import { getFilterOptions, getPortfolioKpis, getQualityReport } from "@/lib/db";
 import type { HealthTier } from "@/lib/types";
@@ -13,14 +13,14 @@ const NAV_TIERS: HealthTier[] = ["At Risk", "Watch", "Healthy", "No Data"];
 export function Shell({
   title,
   activeTier,
-  plan,
+  plan = [],
   csm,
   q,
   children,
 }: {
   title: string;
   activeTier?: HealthTier | null;
-  plan?: string;
+  plan?: string[];
   csm?: string;
   q?: string;
   children: React.ReactNode;
@@ -33,7 +33,7 @@ export function Shell({
   const qs = (tier: HealthTier | null) => {
     const p = new URLSearchParams();
     if (tier) p.set("tier", tier);
-    if (plan && plan !== "all") p.set("plan", plan);
+    for (const pl of plan) p.append("plan", pl);
     if (csm && csm !== "all") p.set("csm", csm);
     if (q) p.set("q", q);
     const s = p.toString();
@@ -133,12 +133,12 @@ export function Shell({
               value={csm ?? "all"}
               options={[{ value: "all", label: "All CSMs" }, ...owners.map((o) => ({ value: o, label: o }))]}
             />
-            <SelectFilter
+            <MultiSelectFilter
               name="plan"
               label="Filter by plan tier"
-              value={plan ?? "all"}
+              values={plan}
+              allLabel="All plans"
               options={[
-                { value: "all", label: "All plans" },
                 { value: "Enterprise", label: "Enterprise" },
                 { value: "Pro", label: "Pro" },
                 { value: "Free", label: "Free" },

@@ -50,7 +50,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
   const tier = one(sp.tier) as HealthTier | undefined;
-  const plan = one(sp.plan);
+  const plan = Array.isArray(sp.plan) ? sp.plan : sp.plan ? [sp.plan] : [];
   const csm = one(sp.csm);
   const q = one(sp.q);
   const sort = (one(sp.sort) as SortKey | undefined) ?? "priority";
@@ -151,34 +151,38 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       </div>
 
       {/* ---------- distribution + movers ---------- */}
-      <div className="mb-3 grid grid-cols-1 items-start gap-3 xl:grid-cols-[1.25fr_1fr]">
-        <Card>
-          <CardHead title="Health distribution" hint={`${summary.accounts} accounts`} />
-          <div className="px-4 pb-4 pt-[14px]">
-            <div className="my-[14px] flex h-[34px] gap-[2px]">
-              {distribution
-                .filter((d) => summary.tierCounts[d.tier] > 0)
-                .map((d) => (
-                  <Link
-                    key={d.tier}
-                    href={`/?tier=${encodeURIComponent(d.tier)}`}
-                    title={`${d.label}: ${summary.tierCounts[d.tier]} accounts · ${money(arrByTier[d.tier])}`}
-                    className="grid place-items-center rounded-[3px] no-underline transition hover:brightness-105"
-                    style={{
-                      flex: `${summary.tierCounts[d.tier]} ${summary.tierCounts[d.tier]} 0`,
-                      background: TIER_STYLE[d.tier].mark,
-                    }}
-                  >
-                    <span
-                      className="num text-[11.5px] font-semibold text-white"
-                      style={{ textShadow: "0 0 2px rgba(0,0,0,0.25)" }}
-                    >
-                      {summary.tierCounts[d.tier]}
-                    </span>
-                  </Link>
-                ))}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1">
+      <div className="mb-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.25fr_1fr]">
+        <Card className="flex flex-col">
+          <CardHead
+            title="Health distribution"
+            hint={`${summary.accounts} accounts · ${money(summary.totalArr)}`}
+          />
+          <div className="flex flex-1 flex-col px-4 pb-4 pt-[14px]">
+            {/* The same four tiers measured two ways. The bars are meant to
+                disagree: most of the count sits in Healthy, and a quarter of
+                the money does not - that gap is the argument for keeping
+                health and priority on separate axes. */}
+            <DistributionBar
+              label="By account"
+              hint={`${summary.accounts} accounts`}
+              segments={distribution.map((d) => ({
+                tier: d.tier,
+                value: summary.tierCounts[d.tier],
+                text: String(summary.tierCounts[d.tier]),
+                title: `${d.label}: ${summary.tierCounts[d.tier]} accounts · ${money(arrByTier[d.tier])}`,
+              }))}
+            />
+            <DistributionBar
+              label="By ARR"
+              hint={money(summary.totalArr)}
+              segments={distribution.map((d) => ({
+                tier: d.tier,
+                value: arrByTier[d.tier],
+                text: money(arrByTier[d.tier]),
+                title: `${d.label}: ${money(arrByTier[d.tier])} · ${summary.tierCounts[d.tier]} accounts`,
+              }))}
+            />
+            <div className="mb-[13px] mt-[15px] flex flex-wrap gap-x-4 gap-y-1">
               {distribution.map((d) => (
                 <span key={d.tier} className="flex items-center gap-[7px] text-[12px] text-ink-2">
                   <i
@@ -190,7 +194,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 </span>
               ))}
             </div>
-            <div className="mt-[13px] flex flex-wrap gap-x-4 gap-y-[3px] border-t border-hairline pt-[11px] text-[11.5px] text-ink-3">
+            <div className="mt-auto flex flex-wrap gap-x-4 gap-y-[3px] border-t border-hairline pt-[11px] text-[11.5px] text-ink-3">
               <span>
                 Bands: <b className="num font-medium text-ink-2">Healthy ≥ {TIER_THRESHOLDS.healthy}</b>
               </span>
@@ -302,6 +306,56 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         </p>
       )}
     </Shell>
+  );
+}
+
+/**
+ * One proportional bar across the four tiers. Each segment links to the same
+ * tier filter the sidebar uses, so the bar is navigation as well as a picture.
+ */
+function DistributionBar({
+  label,
+  hint,
+  segments,
+}: {
+  label: string;
+  hint: string;
+  segments: { tier: HealthTier; value: number; text: string; title: string }[];
+}) {
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
+
+  return (
+    <div className="mb-[14px] last:mb-0">
+      <div className="mb-[6px] flex items-baseline justify-between gap-3">
+        <span className="eyebrow">{label}</span>
+        <span className="num text-[11px] text-ink-3">{hint}</span>
+      </div>
+      <div className="flex h-[30px] gap-[2px]">
+        {segments
+          .filter((s) => s.value > 0)
+          .map((s) => (
+            <Link
+              key={s.tier}
+              href={`/?tier=${encodeURIComponent(s.tier)}`}
+              title={s.title}
+              className="grid place-items-center overflow-hidden rounded-[3px] no-underline transition hover:brightness-105"
+              style={{ flex: `${s.value} ${s.value} 0`, background: TIER_STYLE[s.tier].mark }}
+            >
+              {/* Below this share the segment is too narrow to hold its own
+                  label without clipping. The legend under the bars and the
+                  hover title still carry the number. */}
+              {s.value / total >= 0.09 && (
+                <span
+                  className="num text-[11.5px] font-semibold text-white"
+                  style={{ textShadow: "0 0 2px rgba(0,0,0,0.25)" }}
+                >
+                  {s.text}
+                </span>
+              )}
+            </Link>
+          ))}
+      </div>
+    </div>
   );
 }
 

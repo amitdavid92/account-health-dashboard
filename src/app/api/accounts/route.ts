@@ -20,9 +20,11 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const sort = params.get("sort");
 
+  const plans = params.getAll("plan");
+
   const filters: AccountFilters = {
     tier: params.get("tier") ?? undefined,
-    plan: params.get("plan") ?? undefined,
+    plan: plans.length ? plans : undefined,
     csm: params.get("csm") ?? undefined,
     risk: params.get("risk") ?? undefined,
     search: params.get("search") ?? undefined,
