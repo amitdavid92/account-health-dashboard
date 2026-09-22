@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
-import { Card, CardHead, Disclosure, FlaggedChip, Sparkline, TierChip, initialsOf, money } from "@/components/primitives";
+import { Card, CardHead, Disclosure, FlagGlyph, FlaggedChip, Sparkline, TierChip, initialsOf, money } from "@/components/primitives";
 import {
   listAccounts,
   getRawData,
@@ -54,6 +54,24 @@ const COLUMNS: {
  * exactly the same aggregation `arrByTier` below already did inline, just
  * organised into one place instead of scattered per tile.
  */
+/**
+ * Same rule as pipeline.ts's needsAttention(tier, risks): a Healthy account
+ * still counts if its worst risk clears the priority floor. topRisk is
+ * already that worst risk - risks.ts sorts by severity before storing it -
+ * so this is the identical check, just read off the flat row instead of a
+ * full Risk[] array.
+ *
+ * Exposed as its own function (not just inlined in summariseView's loop) so
+ * a single row can ask the same question about itself - the KPI tile's count
+ * and the flag icons visible in the table can then never disagree, because
+ * both call this.
+ */
+function isHealthyButFlagged(a: AccountListRow): boolean {
+  if (a.tier !== "Healthy") return false;
+  const floor = a.topRisk ? (PRIORITY_RISK_FLOOR[a.topRisk.severity as RiskSeverity] ?? 0) : 0;
+  return floor > 0;
+}
+
 function summariseView(rows: AccountListRow[]) {
   const tierCounts: Record<HealthTier, number> = { Healthy: 0, Watch: 0, "At Risk": 0, "No Data": 0 };
   const arrByTier: Record<HealthTier, number> = { Healthy: 0, Watch: 0, "At Risk": 0, "No Data": 0 };
@@ -70,13 +88,9 @@ function summariseView(rows: AccountListRow[]) {
     if (a.tier === "At Risk") arrAtRisk += a.arrUsd;
     if (a.tier === "Watch") arrWatch += a.arrUsd;
 
-    // Same rule as pipeline.ts's needsAttention(tier, risks): everything
-    // below Healthy counts, plus a Healthy account whose worst risk clears
-    // the priority floor. topRisk is already that worst risk - risks.ts
-    // sorts by severity before storing it - so this is the identical check,
-    // just read off the flat row instead of a full Risk[] array.
-    const floor = a.topRisk ? (PRIORITY_RISK_FLOOR[a.topRisk.severity as RiskSeverity] ?? 0) : 0;
-    if (a.tier !== "Healthy" || floor > 0) {
+    // Everything below Healthy counts on its own; a Healthy account counts
+    // too if isHealthyButFlagged says so.
+    if (a.tier !== "Healthy" || isHealthyButFlagged(a)) {
       accountsNeedingAttention += 1;
       if (a.tier === "Healthy") healthyNeedingReview += 1;
     }
@@ -542,6 +556,19 @@ function AccountRow({ account: a, delta }: { account: AccountListRow; delta: num
             {a.tier === "No Data" ? "—" : a.score}
           </span>
           <TierChip tier={a.tier} />
+          {/* Qualifies the chip right where it sits, rather than trusting a
+              reader to scan all the way to Signal to act on: Healthy is a
+              usage verdict, and this account still has something a human
+              should look at. Same rule the KPI tile's "N flagged" count uses,
+              so the two can never disagree. */}
+          {isHealthyButFlagged(a) && (
+            <span
+              className="text-warn-ink"
+              title={`${a.topRisk?.title} (${a.topRisk?.severity}) — see Signal to act on`}
+            >
+              <FlagGlyph />
+            </span>
+          )}
         </span>
       </td>
 

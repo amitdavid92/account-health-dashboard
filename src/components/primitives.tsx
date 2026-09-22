@@ -129,7 +129,7 @@ export function PillarGlyph({ pillarKey }: { pillarKey: PillarKey }) {
  * fact orthogonal to tier, so it gets its own glyph rather than borrowing a
  * tier's shape for a different meaning.
  */
-function FlagGlyph() {
+export function FlagGlyph() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
       <path d="M2.3 1.6v8.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
