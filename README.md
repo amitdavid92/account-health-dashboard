@@ -6,6 +6,8 @@ conversation to have first, and the evidence behind every verdict.
 Built from `accounts.json` and `usage_events.json` as a full pipeline — raw export → normalized
 SQLite → API → Next.js UI.
 
+![Demo: filtering the triage queue to At Risk, an account drill-down with its score breakdown expanded, and the chat assistant answering a real question about that account](docs/demo.gif)
+
 📄 **[ANALYSIS.md](ANALYSIS.md)** — what the data contains, the data-quality checks the pipeline
 ran, every threshold and why, the severity model, edge cases, assumptions, and open questions.
 Written for whoever is reviewing the build, not for the dashboard's own users - the app itself
