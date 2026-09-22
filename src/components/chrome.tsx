@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { QualityIssue } from "@/lib/types";
-import { QUALITY_STYLE } from "@/lib/ui";
 
 export function ThemeToggle() {
   /**
@@ -67,7 +65,7 @@ export function SearchBox({ initial }: { initial: string }) {
       type="search"
       value={value}
       onChange={(e) => setValue(e.target.value)}
-      placeholder="Search account, domain or CSM"
+      placeholder="Search account or domain"
       aria-label="Search accounts"
       className="h-[30px] min-w-0 rounded-[7px] border border-hairline-strong bg-surface px-[9px] text-[12.5px] text-ink placeholder:text-ink-3 sm:min-w-[210px]"
     />
@@ -227,133 +225,5 @@ export function MultiSelectFilter({
         </div>
       )}
     </div>
-  );
-}
-
-export function DataNotesDrawer({ notes }: { notes: QualityIssue[] }) {
-  const [open, setOpen] = useState(false);
-  const findings = notes.filter((n) => n.severity !== "info");
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
-  const trigger = (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      aria-label="Open data notes"
-      title="Data notes"
-      className="relative grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-hairline-strong bg-surface text-ink-2 hover:border-ink-3 hover:text-ink"
-    >
-      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-        <path
-          d="M8 1.8 L14.4 13.2 H1.6 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
-        />
-        <path d="M8 6.2v3.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        <circle cx="8" cy="11.3" r="0.8" fill="currentColor" />
-      </svg>
-      {findings.length > 0 && (
-        <span
-          className="num absolute -right-1 -top-1 grid h-[15px] min-w-[15px] place-items-center rounded-[8px] border-[1.5px] border-surface px-[3px] text-[9.5px] font-bold"
-          style={{ background: "var(--warn)", color: "#3a2a04" }}
-        >
-          {findings.length}
-        </span>
-      )}
-    </button>
-  );
-
-  /* Two things this container is load-bearing for: it clips the panel while
-     closed (parking a fixed element at translate-x-full would otherwise extend
-     the document's scroll width and add a horizontal scrollbar on a phone),
-     and it must not sit inside any ancestor with backdrop-filter, transform or
-     filter - each of those makes a containing block for fixed descendants and
-     would size `inset-0` to that ancestor instead of the viewport. */
-  const panel = (
-    <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
-      <div
-        onClick={() => setOpen(false)}
-        className={`absolute inset-0 bg-[rgba(9,9,11,0.42)] transition-opacity duration-150 ${
-          open ? "pointer-events-auto opacity-100" : "opacity-0"
-        }`}
-        aria-hidden="true"
-      />
-      <aside
-        aria-label="Data notes"
-        aria-hidden={!open}
-        className={`absolute inset-y-0 right-0 flex w-[min(452px,100%)] flex-col border-l border-hairline bg-surface transition-transform duration-200 ${
-          open ? "pointer-events-auto translate-x-0" : "translate-x-full"
-        }`}
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-      >
-        <header className="flex items-center gap-[10px] border-b border-hairline px-[18px] py-4">
-          <h2 className="text-[14px] font-semibold">Data notes</h2>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Close data notes"
-            className="grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-hairline-strong bg-surface text-ink-2 hover:text-ink"
-          >
-            <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
-              <path
-                d="M2.5 2.5l9 9m0-9l-9 9"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </header>
-
-        <div className="overflow-y-auto pb-6 pt-[6px]">
-          {notes.map((n) => (
-            <article key={n.code} className="border-b border-hairline px-[18px] py-[13px]">
-              <div className="mb-[5px] flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="h-[6px] w-[6px] shrink-0 rounded-full"
-                  style={{ background: QUALITY_STYLE[n.severity].mark }}
-                />
-                <span className="text-[12.5px] font-medium">{n.title}</span>
-                {n.count > 0 && (
-                  <span className="num inline-flex h-[17px] items-center rounded-[4px] border border-hairline-strong px-[5px] text-[10.5px] text-ink-3">
-                    {n.count}
-                  </span>
-                )}
-              </div>
-              <p className="text-[12px] text-ink-2">{n.detail}</p>
-              <p className="mt-[6px] text-[12px] font-medium text-accent-ink">{n.resolution}</p>
-            </article>
-          ))}
-          <article className="px-[18px] py-[13px]">
-            <div className="mb-[5px] text-[12.5px] font-medium">Why this panel exists</div>
-            <p className="text-[12px] text-ink-2">
-              Every number here is one join away from a judgement call. Putting those calls on
-              screen lets a CSM tell the difference between{" "}
-              <b className="font-medium text-ink">an account in trouble</b> and{" "}
-              <b className="font-medium text-ink">an account we cannot see</b> - and lets a
-              reviewer argue with the reasoning instead of guessing at it.
-            </p>
-          </article>
-        </div>
-      </aside>
-    </div>
-  );
-
-  return (
-    <>
-      {trigger}
-      {panel}
-    </>
   );
 }

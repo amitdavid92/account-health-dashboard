@@ -7,7 +7,7 @@
  * it only decides how each value is drawn.
  */
 
-import type { HealthTier, QualitySeverity, RiskSeverity } from "./types";
+import type { HealthTier, RiskSeverity } from "./types";
 
 export function money(v: number): string {
   if (v === 0) return "$0";
@@ -71,21 +71,6 @@ export const SEVERITY_STYLE: Record<
   Medium: { chip: "bg-warn-wash text-warn-ink", mark: "var(--warn)", ink: "var(--warn-ink)" },
   High: { chip: "bg-warn-wash text-warn-ink", mark: "var(--warn)", ink: "var(--warn-ink)" },
   Critical: { chip: "bg-crit-wash text-crit-ink", mark: "var(--crit)", ink: "var(--crit-ink)" },
-};
-
-/**
- * A data-quality check maps onto the same good/warn/crit scale: info -> good
- * (verified clean), warning -> warn (found and handled), error -> crit
- * (excluded from scoring). Shared by the data-quality page and the sidebar's
- * data-notes drawer, which summarise the same report.
- */
-export const QUALITY_STYLE: Record<
-  QualitySeverity,
-  { glyph: string; mark: string; label: string }
-> = {
-  info: { glyph: "✓", mark: "var(--good)", label: "Clean" },
-  warning: { glyph: "!", mark: "var(--warn)", label: "Handled" },
-  error: { glyph: "✕", mark: "var(--crit)", label: "Excluded" },
 };
 
 export function silenceLabel(days: number | null): string {

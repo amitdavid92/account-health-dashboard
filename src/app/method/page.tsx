@@ -12,7 +12,6 @@ import {
   CONSISTENCY_BANDS,
   DEPTH_BANDS,
   DEPTH_CREATED_WEIGHT,
-  LOW_CONFIDENCE_MIN_EVENTS,
   OVERRIDES,
   PILLARS,
   RECENCY_BANDS,
@@ -22,7 +21,7 @@ import {
   WINDOW,
   type Band,
 } from "@/lib/config";
-import { Card, TierChip } from "@/components/primitives";
+import { Card, PillarGlyph, TierChip } from "@/components/primitives";
 
 export const metadata = { title: "How health is scored — Account Health" };
 
@@ -103,7 +102,12 @@ export default function MethodPage() {
           {pillars.map((p) => (
             <Card key={p.key} className="p-4">
               <div className="mb-1 flex items-baseline justify-between">
-                <h3 className="text-[13px] font-medium">{PILLARS[p.key].label}</h3>
+                <span className="inline-flex items-center gap-[6px]">
+                  <span className="text-ink-3">
+                    <PillarGlyph pillarKey={p.key} />
+                  </span>
+                  <h3 className="text-[13px] font-medium">{PILLARS[p.key].label}</h3>
+                </span>
                 <span className="num text-[12px] text-ink-3">{PILLARS[p.key].max} pts</span>
               </div>
               <p className="mb-3 text-[12.5px] leading-[1.55] text-ink-2">{PILLARS[p.key].rationale}</p>
@@ -154,7 +158,7 @@ export default function MethodPage() {
             </span>
           </p>
           <p>
-            <strong className="font-medium text-ink">Never created or shared a guide → cannot be Healthy.</strong>{" "}
+            <strong className="font-medium text-ink">No guide created or shared in the window → cannot be Healthy.</strong>{" "}
             <span className="text-ink-2">
               The account is paying for a guide platform and producing no guides. Login volume does
               not change that.
@@ -182,18 +186,50 @@ export default function MethodPage() {
       </section>
 
       <section className="mb-7">
-        <h2 className="mb-1 text-[14px] font-semibold">Severity, and why it is not a label</h2>
+        <h2 className="mb-1 text-[14px] font-semibold">Priority: who to call first</h2>
         <p className="mb-3 text-[12.5px] leading-[1.6] text-ink-2">
-          Each risk starts at a severity set by its own strength, then moves for reasons a CSM would
-          recognise:
+          Health answers &ldquo;how is the product going&rdquo;. Priority answers &ldquo;who do I
+          call first&rdquo;, and they are kept on separate axes on purpose.
+        </p>
+        <Card className="p-4">
+          <p className="num mb-[10px] text-[12.5px] leading-[1.7] text-ink">
+            weight = max(tier weight, floor from the most severe risk)
+            <br />
+            priority = weight × (1 + log₁₀(1 + ARR))
+          </p>
+          <p className="text-[12.5px] leading-[1.6] text-ink-2">
+            Tier weights are At Risk 3 · Watch 2 · No Data 2 · Healthy 0. The floor is Critical 3 ·
+            High 2, and nothing below that — so an account that is Healthy on every usage pillar but
+            carries a High commercial flag still appears in the queue instead of sorting to zero.
+            Taking the maximum rather than the sum stops the two from counting the same trouble
+            twice. ARR is log-scaled so a $218K account outranks a $66K one without one whale
+            flattening the list.
+          </p>
+          <p className="mt-[10px] text-[12.5px] leading-[1.6] text-ink-2">
+            <strong className="font-medium text-ink">This is an operational triage policy, not a
+            churn model.</strong>{" "}
+            It encodes &ldquo;somebody should look at this, and roughly what it costs us if they are
+            right&rdquo;. There are no churn outcomes in this dataset, so nothing here is fitted to
+            them and no number in it is a probability. The same reasoning drives the{" "}
+            <em className="not-italic text-ink-2">Suggested action</em> on an account page, which is
+            a fixed mapping from the leading risk rather than a prediction.
+          </p>
+        </Card>
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-[14px] font-semibold">Why severity moves</h2>
+        <p className="mb-3 text-[12.5px] leading-[1.6] text-ink-2">
+          A risk starts at a severity set by its own strength, then moves for two reasons - both
+          spelled out on the account page next to the risk they apply to, so nothing here is a
+          number without a reason attached to it:
         </p>
         <Card className="flex flex-col gap-[10px] p-4 text-[12.5px]">
           <p>
             <strong className="font-medium text-ink">+1 level for a high-value account</strong>{" "}
             <span className="text-ink-2">
               (top {Math.round((1 - SEVERITY_RULES.highValueQuantile) * 100)}% of the book by ARR) —
-              the same signal costs more if we are right. A risk whose definition already contains
-              ARR is exempt, so the same fact is never counted twice.
+              the same signal costs more if we are right.
             </span>
           </p>
           <p>
@@ -201,50 +237,11 @@ export default function MethodPage() {
               +1 level when {SEVERITY_RULES.convergenceCount} or more risks fire together
             </strong>{" "}
             <span className="text-ink-2">
-              — harder to explain away than any one alone. Withheld on low-confidence accounts,
-              where several rules firing is the same thin evidence counted several times rather
-              than independent corroboration.
-            </span>
-          </p>
-          <p>
-            <strong className="font-medium text-ink">Held at High when every health pillar is strong</strong>{" "}
-            <span className="text-ink-2">
-              — Critical means act this week. On a thriving account a single diagnostic flag is a
-              conversation to have, not a fire to put out.
+              — harder to explain away than any one alone. Withheld on accounts with too little
+              activity to characterise with confidence.
             </span>
           </p>
         </Card>
-      </section>
-
-      <section>
-        <h2 className="mb-1 text-[14px] font-semibold">What is deliberately missing</h2>
-        <ul className="flex flex-col gap-2 text-[12.5px] leading-[1.6] text-ink-2">
-          <li>
-            <strong className="font-medium text-ink">ARR is not in the score.</strong> An Enterprise
-            account is not healthier for paying more. ARR decides who gets called first, which is a
-            separate axis and a separate column.
-          </li>
-          <li>
-            <strong className="font-medium text-ink">Total event count is not a KPI.</strong> It
-            rewards noise: in this portfolio the two most active accounts are both on free plans
-            worth $0, and ARR correlates <em>negatively</em> with usage.
-          </li>
-          <li>
-            <strong className="font-medium text-ink">No hour-of-day or day-of-week analysis.</strong>{" "}
-            The export contains no events at all between 09:00 and 19:00 UTC, which no real customer
-            base produces. Building on that distribution would be inventing a finding.
-          </li>
-          <li>
-            <strong className="font-medium text-ink">Per-user engagement is not scored.</strong> 186
-            users produce between 1 and 8 events each. Users are counted, not ranked.
-          </li>
-          <li>
-            <strong className="font-medium text-ink">An account with no events is never called At Risk.</strong>{" "}
-            It is reported as No Data. Absence of evidence is as likely to be a broken pipeline as a
-            lost customer, and those need opposite responses. Below {LOW_CONFIDENCE_MIN_EVENTS}{" "}
-            events the verdict is shown but labelled low confidence.
-          </li>
-        </ul>
       </section>
     </div>
   );

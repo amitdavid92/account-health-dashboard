@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { TIER_STYLE, money } from "@/lib/ui";
 import { Logo } from "./Logo";
-import { DataNotesDrawer, MultiSelectFilter, SearchBox, SelectFilter, ThemeToggle } from "./chrome";
+import { MultiSelectFilter, SearchBox, SelectFilter, ThemeToggle } from "./chrome";
 import { ChatAssistant } from "./chat";
 import { getFilterOptions, getPortfolioKpis, getQualityReport } from "@/lib/db";
 import type { HealthTier } from "@/lib/types";
@@ -26,7 +26,6 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const summary = getPortfolioKpis();
-  const notes = getQualityReport().issues;
   const owners = getFilterOptions().csms;
   const windowDays = getQualityReport().totals?.windowDays ?? 90;
 
@@ -44,7 +43,7 @@ export function Shell({
     <div className="flex min-h-full flex-col md:flex-row">
       <aside className="flex shrink-0 gap-[14px] overflow-x-auto border-b border-hairline bg-surface px-4 py-3 md:sticky md:top-0 md:h-screen md:w-[208px] md:flex-col md:gap-[22px] md:overflow-visible md:border-b-0 md:border-r md:px-3 md:py-[18px]">
         <Link href="/" className="flex items-center gap-[9px] px-2 no-underline">
-          <Logo size={18} />
+          <Logo size={20} />
           <span className="whitespace-nowrap">
             <span className="block text-[13.5px] font-semibold tracking-[-0.01em] text-ink">
               Account Health
@@ -145,7 +144,6 @@ export function Shell({
               ]}
             />
           </Suspense>
-          <DataNotesDrawer notes={notes} />
           <ChatAssistant />
           <ThemeToggle />
         </header>

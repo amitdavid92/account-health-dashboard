@@ -1,26 +1,99 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
-import { Card, CardHead, Sparkline, TierChip, initialsOf, money } from "@/components/primitives";
-import { listAccounts, getPortfolioKpis, getRawData, type AccountFilters, type AccountListRow } from "@/lib/db";
+import { Card, CardHead, Disclosure, Sparkline, TierChip, initialsOf, money } from "@/components/primitives";
+import {
+  listAccounts,
+  getRawData,
+  parseSort,
+  type AccountListRow,
+  type SortKey,
+} from "@/lib/db";
 import { TIER_STYLE } from "@/lib/ui";
-import { TIER_THRESHOLDS, SEVERITY_RULES } from "@/lib/config";
+import { PRIORITY_RISK_FLOOR, TIER_THRESHOLDS, SEVERITY_RULES, WINDOW } from "@/lib/config";
+import { median } from "@/lib/pipeline";
 import { quantile } from "@/lib/risks";
 import { scoresThirtyDaysAgo } from "@/lib/history";
-import type { HealthTier } from "@/lib/types";
+import type { HealthTier, RiskSeverity } from "@/lib/types";
 
 export const metadata = { title: "Book of business · Account Health" };
 
-type SortKey = NonNullable<AccountFilters["sort"]>;
 
-const COLUMNS: { key: SortKey | null; label: string; right?: boolean; dir: "asc" | "desc" }[] = [
+const COLUMNS: {
+  key: SortKey | null;
+  label: string;
+  sub?: string;
+  right?: boolean;
+  dir: "asc" | "desc";
+}[] = [
   { key: "name", label: "Account", dir: "asc" },
   { key: "score", label: "Health", dir: "asc" },
-  { key: null, label: "30d", dir: "asc" },
+  // Two stacked lines rather than one long one: the cell holds two different
+  // measures and both get named, without widening the column.
+  { key: null, label: "Activity 13w", sub: "Score Δ 30d", dir: "asc" },
   { key: "arr", label: "ARR", right: true, dir: "desc" },
   { key: null, label: "Plan", dir: "asc" },
   { key: null, label: "CSM", dir: "asc" },
   { key: null, label: "Signal to act on", dir: "asc" },
 ];
+
+/**
+ * Portfolio-shaped totals, re-derived from whatever set of accounts is
+ * actually on screen.
+ *
+ * Everything on this page used to read `getPortfolioKpis()` - a single JSON
+ * blob computed once at ingest over the *whole* book - regardless of which
+ * tier, plan, CSM or search filter was active. That made the stat tiles,
+ * both distribution bars and Biggest drops silently describe a different set
+ * of accounts than the table directly below them: filter to Pro-only and the
+ * "$503K of $1.49M" tile kept quoting the entire portfolio.
+ *
+ * This mirrors buildPortfolioKpis in pipeline.ts field for field (down to
+ * importing the same `median` helper so the two can never disagree), but
+ * runs over the flat, already-filtered `AccountListRow[]` the page already
+ * has in hand, so no health, tier or risk computation is touched - it is
+ * exactly the same aggregation `arrByTier` below already did inline, just
+ * organised into one place instead of scattered per tile.
+ */
+function summariseView(rows: AccountListRow[]) {
+  const tierCounts: Record<HealthTier, number> = { Healthy: 0, Watch: 0, "At Risk": 0, "No Data": 0 };
+  const arrByTier: Record<HealthTier, number> = { Healthy: 0, Watch: 0, "At Risk": 0, "No Data": 0 };
+  let totalArr = 0;
+  let arrAtRisk = 0;
+  let arrWatch = 0;
+  let accountsNeedingAttention = 0;
+  let healthyNeedingReview = 0;
+
+  for (const a of rows) {
+    tierCounts[a.tier] += 1;
+    arrByTier[a.tier] += a.arrUsd;
+    totalArr += a.arrUsd;
+    if (a.tier === "At Risk") arrAtRisk += a.arrUsd;
+    if (a.tier === "Watch") arrWatch += a.arrUsd;
+
+    // Same rule as pipeline.ts's needsAttention(tier, risks): everything
+    // below Healthy counts, plus a Healthy account whose worst risk clears
+    // the priority floor. topRisk is already that worst risk - risks.ts
+    // sorts by severity before storing it - so this is the identical check,
+    // just read off the flat row instead of a full Risk[] array.
+    const floor = a.topRisk ? (PRIORITY_RISK_FLOOR[a.topRisk.severity as RiskSeverity] ?? 0) : 0;
+    if (a.tier !== "Healthy" || floor > 0) {
+      accountsNeedingAttention += 1;
+      if (a.tier === "Healthy") healthyNeedingReview += 1;
+    }
+  }
+
+  return {
+    accounts: rows.length,
+    totalArr,
+    arrAtRisk,
+    arrWatch,
+    tierCounts,
+    arrByTier,
+    accountsNeedingAttention,
+    healthyNeedingReview,
+    medianScore: median(rows.filter((a) => a.tier !== "No Data").map((a) => a.score)),
+  };
+}
 
 function sortHref(sp: Record<string, string | string[] | undefined>, key: SortKey) {
   const p = new URLSearchParams();
@@ -33,12 +106,33 @@ function sortHref(sp: Record<string, string | string[] | undefined>, key: SortKe
   return `/?${p.toString()}`;
 }
 
-function Delta({ value, className = "" }: { value: number | null; className?: string }) {
+/** Shared by the triage table and Biggest drops, so the same caveat reads the
+ *  same way in both places. Text, not colour alone - and never only a tooltip. */
+function LowVolumeBadge() {
+  return (
+    <span
+      className="inline-flex h-[15px] shrink-0 items-center rounded-[4px] border border-hairline-strong px-1 text-[10px] text-ink-3"
+      title="Too few events in the window to characterise this account with confidence"
+    >
+      low volume
+    </span>
+  );
+}
+
+function Delta({
+  value,
+  className = "",
+  title,
+}: {
+  value: number | null;
+  className?: string;
+  title?: string;
+}) {
   if (value === null) return <span className="text-ink-3">—</span>;
   const tone = value > 0 ? "text-good-ink" : value < 0 ? "text-crit-ink" : "text-ink-3";
   const sign = value > 0 ? "+" : value < 0 ? "−" : "±";
   return (
-    <span className={`num font-medium ${tone} ${className}`}>
+    <span title={title} className={`num font-medium ${tone} ${className}`}>
       {sign}
       {Math.abs(value)}
     </span>
@@ -53,22 +147,26 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const plan = Array.isArray(sp.plan) ? sp.plan : sp.plan ? [sp.plan] : [];
   const csm = one(sp.csm);
   const q = one(sp.q);
-  const sort = (one(sp.sort) as SortKey | undefined) ?? "priority";
+  const sort = parseSort(one(sp.sort));
 
-  const summary = getPortfolioKpis();
   const rows = listAccounts({ tier, plan, csm, search: q, sort });
+  // The unfiltered book, kept for exactly two things that must NOT track the
+  // active filters: the "X of N total" denominator on the triage queue, and
+  // the high-value ARR threshold just below. That threshold is the same
+  // top-quartile cut risks.ts baked into every account's severity at ingest
+  // time (SEVERITY_RULES.highValueQuantile, computed once over the whole
+  // book) - recomputing it from a filtered subset would silently redefine
+  // "high value" away from what each risk's own "+1 for top-quartile ARR"
+  // escalation already used, which would be a second, disagreeing threshold.
   const all = listAccounts({});
 
-  // Per-tier ARR, computed from the full list rather than derived from the
-  // KPI totals, so it stays correct even if an account ever lands in No Data.
-  const arrByTier: Record<HealthTier, number> = { Healthy: 0, Watch: 0, "At Risk": 0, "No Data": 0 };
-  for (const a of all) arrByTier[a.tier] += a.arrUsd;
+  // Everything else on this page - the stat tiles, both distribution bars,
+  // Biggest drops - is derived from `rows`, the same filtered set the table
+  // below shows. See summariseView's own comment for why.
+  const view = summariseView(rows);
 
-  // The same top-quartile ARR cut the severity model uses (config.ts /
-  // risks.ts), so "which accounts are big enough to flag here" is the exact
-  // same line the risk engine already draws - not a second opinion.
   const highValueArr = quantile(all.map((a) => a.arrUsd), SEVERITY_RULES.highValueQuantile);
-  const bigBelowHealthy = all.filter((a) => a.tier !== "Healthy" && a.arrUsd >= highValueArr);
+  const bigBelowHealthy = rows.filter((a) => a.tier !== "Healthy" && a.arrUsd >= highValueArr);
 
   // "Score 30 days ago": re-run the same pure pipeline on an earlier
   // snapshot (history.ts) rather than storing any history. See that file.
@@ -80,9 +178,12 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       ? null
       : a.score - before;
   };
-  const movers = all
+  // Drops only, and only among the currently filtered accounts - a card
+  // headed "Biggest drops" that lists a +6 because nothing fell, or that
+  // shows a drop excluded by the active plan filter, is misleading either way.
+  const movers = rows
     .map((a) => ({ a, delta: deltaOf(a) }))
-    .filter((m): m is { a: AccountListRow; delta: number } => m.delta !== null)
+    .filter((m): m is { a: AccountListRow; delta: number } => m.delta !== null && m.delta < 0)
     .sort((x, y) => x.delta - y.delta)
     .slice(0, 5);
 
@@ -96,57 +197,72 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   return (
     <Shell title="Book of business" activeTier={tier ?? null} plan={plan} csm={csm} q={q}>
       {/* ---------- stat tiles ---------- */}
-      <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="flex flex-col gap-2 px-4 pb-[13px] pt-[14px]">
+      <div className="mb-[10px] grid grid-cols-1 gap-[10px] sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="flex flex-col gap-[6px] px-4 pb-[10px] pt-[11px]">
           <span className="text-[11.5px] text-ink-2">ARR below Healthy</span>
           <span className="flex items-end gap-[9px]">
             <span className="text-[44px] font-semibold leading-none tracking-[-0.02em]">
-              {money(summary.arrAtRisk + summary.arrWatch)}
+              {money(view.arrAtRisk + view.arrWatch)}
             </span>
-            <span className="pb-[2px] text-[12px] text-ink-3">of {money(summary.totalArr)}</span>
+            <span className="pb-[2px] text-[12px] text-ink-3">of {money(view.totalArr)}</span>
           </span>
           <span className="text-[11.5px] text-ink-3">
-            {Math.round(((summary.arrAtRisk + summary.arrWatch) / Math.max(1, summary.totalArr)) * 100)}%
-            of book value · {money(summary.arrAtRisk)} of it at risk
+            {Math.round(((view.arrAtRisk + view.arrWatch) / Math.max(1, view.totalArr)) * 100)}%
+            of book value · {money(view.arrAtRisk)} of it at risk
           </span>
         </Card>
 
-        <Card className="flex flex-col gap-2 px-4 pb-[13px] pt-[14px]">
+        {/* Counted per account, not per reason: everything below Healthy
+            (No Data included - an account we cannot see needs a pipeline
+            question answered), plus Healthy accounts carrying a High or
+            Critical flag. An account qualifying twice is still one call. */}
+        <Card className="flex flex-col gap-[6px] px-4 pb-[10px] pt-[11px]">
           <span className="text-[11.5px] text-ink-2">Accounts needing attention</span>
           <span className="flex items-end gap-[9px]">
             <span className="text-[28px] font-semibold leading-none tracking-[-0.02em]">
-              {summary.tierCounts["At Risk"] + summary.tierCounts.Watch}
+              {view.accountsNeedingAttention}
             </span>
-            <span className="pb-[2px] text-[12px] text-ink-3">of {summary.accounts} accounts</span>
+            <span className="pb-[2px] text-[12px] text-ink-3">of {view.accounts} accounts</span>
           </span>
           <span className="flex flex-wrap items-center gap-[6px] text-[11.5px] text-ink-3">
-            <TierChip tier="At Risk" suffix={String(summary.tierCounts["At Risk"])} />
-            <TierChip tier="Watch" suffix={String(summary.tierCounts.Watch)} />
+            <TierChip tier="At Risk" suffix={String(view.tierCounts["At Risk"])} />
+            <TierChip tier="Watch" suffix={String(view.tierCounts.Watch)} />
+            {view.tierCounts["No Data"] > 0 && (
+              <TierChip tier="No Data" suffix={String(view.tierCounts["No Data"])} />
+            )}
+            {view.healthyNeedingReview > 0 && (
+              <span title="Healthy on every usage pillar, but carrying a High or Critical flag that is not a usage problem">
+                + {view.healthyNeedingReview} healthy with an open flag
+              </span>
+            )}
           </span>
         </Card>
 
-        <Card className="flex flex-col gap-2 px-4 pb-[13px] pt-[14px]">
+        <Card className="flex flex-col gap-[6px] px-4 pb-[10px] pt-[11px]">
           <span className="text-[11.5px] text-ink-2">Median health score</span>
           <span className="flex items-end gap-[9px]">
             <span className="text-[28px] font-semibold leading-none tracking-[-0.02em]">
-              {summary.medianScore}
+              {view.medianScore}
             </span>
             <span className="pb-[2px] text-[12px] text-ink-3">/ 100</span>
           </span>
-          <span className="text-[11.5px] text-ink-3">Across every scored account</span>
+          <span className="text-[11.5px] text-ink-3">Across every scored account shown</span>
         </Card>
 
-        <Card className="flex flex-col gap-2 px-4 pb-[13px] pt-[14px]">
+        <Card className="flex flex-col gap-[6px] px-4 pb-[10px] pt-[11px]">
           <span className="text-[11.5px] text-ink-2">No Data</span>
           <span className="flex items-end gap-[9px]">
             <span className="text-[28px] font-semibold leading-none tracking-[-0.02em]">
-              {summary.tierCounts["No Data"]}
+              {view.tierCounts["No Data"]}
             </span>
             <span className="pb-[2px] text-[12px] text-ink-3">no events received</span>
           </span>
-          <span className="text-[11.5px] text-ink-3">
-            Never scored 0 — an account we cannot see is a different problem
-          </span>
+          <span className="text-[11.5px] text-ink-3">Accounts without usage data</span>
+          <Disclosure label="What to check">
+            No events could mean the customer stopped, or that their data isn&rsquo;t reaching us - a
+            broken export or an unmapped workspace. Those need opposite responses, so check data
+            coverage before treating this as a churn signal.
+          </Disclosure>
         </Card>
       </div>
 
@@ -155,7 +271,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         <Card className="flex flex-col">
           <CardHead
             title="Health distribution"
-            hint={`${summary.accounts} accounts · ${money(summary.totalArr)}`}
+            hint={`${view.accounts} accounts · ${money(view.totalArr)}`}
           />
           <div className="flex flex-1 flex-col px-4 pb-4 pt-[14px]">
             {/* The same four tiers measured two ways. The bars are meant to
@@ -164,22 +280,22 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                 health and priority on separate axes. */}
             <DistributionBar
               label="By account"
-              hint={`${summary.accounts} accounts`}
+              hint={`${view.accounts} accounts`}
               segments={distribution.map((d) => ({
                 tier: d.tier,
-                value: summary.tierCounts[d.tier],
-                text: String(summary.tierCounts[d.tier]),
-                title: `${d.label}: ${summary.tierCounts[d.tier]} accounts · ${money(arrByTier[d.tier])}`,
+                value: view.tierCounts[d.tier],
+                text: String(view.tierCounts[d.tier]),
+                title: `${d.label}: ${view.tierCounts[d.tier]} accounts · ${money(view.arrByTier[d.tier])}`,
               }))}
             />
             <DistributionBar
               label="By ARR"
-              hint={money(summary.totalArr)}
+              hint={money(view.totalArr)}
               segments={distribution.map((d) => ({
                 tier: d.tier,
-                value: arrByTier[d.tier],
-                text: money(arrByTier[d.tier]),
-                title: `${d.label}: ${money(arrByTier[d.tier])} · ${summary.tierCounts[d.tier]} accounts`,
+                value: view.arrByTier[d.tier],
+                text: money(view.arrByTier[d.tier]),
+                title: `${d.label}: ${money(view.arrByTier[d.tier])} · ${view.tierCounts[d.tier]} accounts`,
               }))}
             />
             <div className="mb-[13px] mt-[15px] flex flex-wrap gap-x-4 gap-y-1">
@@ -189,36 +305,48 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                     className="h-[9px] w-[9px] shrink-0 rounded-[2.5px]"
                     style={{ background: TIER_STYLE[d.tier].mark }}
                   />
-                  {d.label} <b className="num font-medium text-ink">{summary.tierCounts[d.tier]}</b>
-                  <span className="num text-ink-3">{money(arrByTier[d.tier])}</span>
+                  {d.label} <b className="num font-medium text-ink">{view.tierCounts[d.tier]}</b>
+                  <span className="num text-ink-3">{money(view.arrByTier[d.tier])}</span>
                 </span>
               ))}
             </div>
-            <div className="mt-auto flex flex-wrap gap-x-4 gap-y-[3px] border-t border-hairline pt-[11px] text-[11.5px] text-ink-3">
-              <span>
-                Bands: <b className="num font-medium text-ink-2">Healthy ≥ {TIER_THRESHOLDS.healthy}</b>
-              </span>
-              <span>
-                <b className="num font-medium text-ink-2">
-                  Watch {TIER_THRESHOLDS.watch}–{TIER_THRESHOLDS.healthy - 1}
-                </b>
-              </span>
-              <span>
-                <b className="num font-medium text-ink-2">At risk &lt; {TIER_THRESHOLDS.watch}</b>
-              </span>
-              <span>
-                No Data — <b className="font-medium text-ink-2">held out</b>, never scored 0
-              </span>
+            <div className="mt-auto border-t border-hairline pt-[4px]">
+              <Disclosure label="Scoring rules">
+                <span className="flex flex-wrap gap-x-4 gap-y-[3px]">
+                  <span>
+                    <b className="num font-medium text-ink-2">Healthy ≥ {TIER_THRESHOLDS.healthy}</b>
+                  </span>
+                  <span>
+                    <b className="num font-medium text-ink-2">
+                      Watch {TIER_THRESHOLDS.watch}–{TIER_THRESHOLDS.healthy - 1}
+                    </b>
+                  </span>
+                  <span>
+                    <b className="num font-medium text-ink-2">At risk &lt; {TIER_THRESHOLDS.watch}</b>
+                  </span>
+                  <span>
+                    No Data — <b className="font-medium text-ink-2">no usage received</b>
+                  </span>
+                </span>
+                <p className="mt-[6px]">
+                  Scored out of 100 from product usage only — ARR and plan are never inputs. Full
+                  bands, caps and thresholds: <Link href="/method">how health is scored</Link>.
+                </p>
+              </Disclosure>
             </div>
           </div>
         </Card>
 
         <Card>
-          <CardHead title="Biggest drops" hint="30-day score change" />
+          <CardHead title="Biggest drops" hint="30-day score change · reconstructed" />
           <div className="px-2 pb-[10px] pt-3">
             {movers.length === 0 ? (
               <p className="px-2 py-6 text-center text-[12.5px] text-ink-3">
-                No account has 30 days of prior history yet.
+                No account scores lower than it did 30 days ago.
+                <br />
+                <span className="text-[11.5px]">
+                  Comparison is reconstructed from this export, not stored history.
+                </span>
               </p>
             ) : (
               movers.map(({ a, delta }) => (
@@ -228,8 +356,13 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                   className="grid grid-cols-[1fr_auto_auto] items-center gap-[10px] rounded-[7px] px-2 py-[7px] no-underline hover:bg-inset"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-[12.5px] font-medium text-ink">
-                      {a.companyName}
+                    <span className="flex min-w-0 items-center gap-[6px]">
+                      <span className="truncate text-[12.5px] font-medium text-ink">
+                        {a.companyName}
+                      </span>
+                      {/* Its own chip rather than trailing text, so the row's
+                          truncate can never eat the caveat. */}
+                      {a.lowConfidence && <LowVolumeBadge />}
                     </span>
                     <span className="block truncate text-[11px] text-ink-3">
                       {a.planTier} · {money(a.arrUsd)} · {a.csmOwner}
@@ -246,7 +379,10 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
 
       {/* ---------- triage queue ---------- */}
       <Card>
-        <CardHead title="Triage queue" hint={`${rows.length} of ${summary.accounts} accounts · priority first`} />
+        {/* Denominator is the whole book on purpose - this line tells you how
+            much the active filters narrowed things down, which needs the true
+            total, not the filtered count everything else on this page uses. */}
+        <CardHead title="Triage queue" hint={`${rows.length} of ${all.length} accounts · priority first`} />
         <div className="mt-2 overflow-x-auto">
           {rows.length === 0 ? (
             <p className="px-4 py-10 text-center text-[13px] text-ink-3">
@@ -278,6 +414,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                       ) : (
                         c.label
                       )}
+                      {c.sub && <span className="block text-ink-3 opacity-80">{c.sub}</span>}
                     </th>
                   ))}
                 </tr>
@@ -290,6 +427,23 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             </table>
           )}
         </div>
+        {rows.length > 0 && (
+          <div className="border-t border-hairline px-4 py-[4px]">
+            <Disclosure label="How to read the activity and score-change column">
+              <p>
+                The two marks in that column measure different things. The sparkline is weekly event
+                volume over {WINDOW.chartWeeks} weeks. The number is the change in the health score
+                against 30 days ago, reconstructed by re-running the pipeline over the earlier part
+                of this export — no health history is stored.
+              </p>
+              <p className="mt-[6px]">
+                On accounts marked <b className="font-medium text-ink-2">low volume</b> both ends of
+                that comparison rest on very little activity, so read the direction rather than the
+                size.
+              </p>
+            </Disclosure>
+          </div>
+        )}
       </Card>
 
       {bigBelowHealthy.length > 0 && (
@@ -299,7 +453,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             <b className="font-medium text-ink">
               {bigBelowHealthy.length} accounts over {money(highValueArr)} ARR
             </b>{" "}
-            (this book&rsquo;s own top-quartile cut — the same one severity uses) are below Healthy:{" "}
+            are below Healthy:{" "}
             {bigBelowHealthy.map((a) => `${a.companyName} (${money(a.arrUsd)})`).join(", ")}. These are
             where a CSM hour returns the most.
           </span>
@@ -378,14 +532,7 @@ function AccountRow({ account: a, delta }: { account: AccountListRow; delta: num
                   {a.workspaceCount} workspaces
                 </span>
               )}
-              {a.lowConfidence && (
-                <span
-                  className="inline-flex h-[15px] shrink-0 items-center rounded-[4px] border border-hairline-strong px-1 text-[10px]"
-                  title="Too few events in the window to characterise this account with confidence"
-                >
-                  low volume
-                </span>
-              )}
+              {a.lowConfidence && <LowVolumeBadge />}
             </span>
           </span>
         </Link>
@@ -407,8 +554,22 @@ function AccountRow({ account: a, delta }: { account: AccountListRow; delta: num
           <span className="text-ink-3">—</span>
         ) : (
           <span className="flex items-center gap-2">
-            <Sparkline weekly={a.sparkline} tier={a.tier} />
-            <Delta value={delta} className="text-[11.5px]" />
+            {/* Two different measures side by side - the column header names
+                both, and the disclosure under the table explains them. The
+                "low volume" badge on the name cell carries the caveat, so it
+                is not repeated here. */}
+            <span title={`Weekly event volume, last ${WINDOW.chartWeeks} weeks`}>
+              <Sparkline weekly={a.sparkline} tier={a.tier} />
+            </span>
+            <Delta
+              value={delta}
+              className="text-[11.5px]"
+              title={
+                a.lowConfidence
+                  ? `Health score vs 30 days ago (reconstructed). Only ${a.totalEvents} events in the window — read the direction, not the size.`
+                  : "Health score vs 30 days ago (reconstructed from this export)"
+              }
+            />
           </span>
         )}
       </td>
