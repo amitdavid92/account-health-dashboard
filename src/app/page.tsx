@@ -24,8 +24,20 @@ const COLUMNS: {
   sub?: string;
   right?: boolean;
   dir: "asc" | "desc";
+  /** Short explanation for a header that isn't self-evident from its label
+   *  alone. Exposed as both a hover title and an aria-label, so it reaches
+   *  a keyboard/screen-reader user too, not only someone who hovers. */
+  title?: string;
 }[] = [
   { key: "name", label: "Account", dir: "asc" },
+  {
+    key: "priority",
+    label: "Priority",
+    right: true,
+    dir: "desc",
+    title:
+      "Higher means earlier attention. Combines health tier, highest risk severity, and ARR. This is a relative ranking, not a churn probability.",
+  },
   { key: "score", label: "Health", dir: "asc" },
   // Two stacked lines rather than one long one: the cell holds two different
   // measures and both get named, without widening the column.
@@ -413,7 +425,12 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
                       }`}
                     >
                       {c.key ? (
-                        <Link href={sortHref(sp, c.key)} className="no-underline hover:text-ink">
+                        <Link
+                          href={sortHref(sp, c.key)}
+                          className="no-underline hover:text-ink"
+                          title={c.title}
+                          aria-label={c.title ? `${c.label} — ${c.title}` : undefined}
+                        >
                           {c.label}
                           {sort === c.key && (
                             <span className="ml-1 text-[9px] opacity-45">
@@ -546,6 +563,15 @@ function AccountRow({ account: a, delta }: { account: AccountListRow; delta: num
             </span>
           </span>
         </Link>
+      </td>
+
+      {/* A pure ranking number, not a health measure - kept off the Health
+          colour scale on purpose (config.ts: it combines tier, worst risk
+          severity, and ARR - a Healthy account can rank above a Watch one on
+          ARR alone) so it never reads as a second opinion on the tier chip
+          two columns over. */}
+      <td className="num border-b border-hairline px-3 py-[9px] text-right align-middle text-ink-2">
+        {a.priorityScore.toFixed(2)}
       </td>
 
       <td className="border-b border-hairline px-3 py-[9px] align-middle">
