@@ -10,16 +10,12 @@
  */
 
 import { NextResponse } from "next/server";
-import { getFilterOptions, getSnapshotDate, listAccounts, type AccountFilters } from "@/lib/db";
+import { getFilterOptions, getSnapshotDate, listAccounts, parseSort, type AccountFilters } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const SORTS = new Set(["priority", "score", "arr", "silent", "name"]);
-
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
-  const sort = params.get("sort");
-
   const plans = params.getAll("plan");
 
   const filters: AccountFilters = {
@@ -28,7 +24,7 @@ export async function GET(request: Request) {
     csm: params.get("csm") ?? undefined,
     risk: params.get("risk") ?? undefined,
     search: params.get("search") ?? undefined,
-    sort: sort && SORTS.has(sort) ? (sort as AccountFilters["sort"]) : "priority",
+    sort: parseSort(params.get("sort")),
   };
 
   try {

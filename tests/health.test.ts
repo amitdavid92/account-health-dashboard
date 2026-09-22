@@ -107,7 +107,9 @@ describe("pillars", () => {
     const stopped = stoppedCreating.pillars.find((p) => p.key === "depth")!;
 
     assert.equal(never.points, 0);
-    assert.match(never.evidence, /has ever been created or shared/);
+    // The claim is scoped to the window, not to the account's lifetime - the
+    // export cannot see anything earlier.
+    assert.match(never.evidence, /No guide created or shared at any point in the \d+-day window/);
     assert.ok(stopped.points > never.points, "a lapsed creator is not the same as a never-creator");
     assert.match(stopped.evidence, /after 1 created/);
   });

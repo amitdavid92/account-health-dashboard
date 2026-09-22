@@ -8,7 +8,7 @@
  * churn outcomes they would be fitted instead - see README "What I'd build next".
  */
 
-import type { HealthTier, PillarKey } from "./types";
+import type { HealthTier, PillarKey, RiskSeverity } from "./types";
 
 // ---------------------------------------------------------------------------
 // Analysis windows
@@ -107,7 +107,7 @@ export const DEPTH_BANDS: readonly Band[] = [
 
 /**
  * Partial credit for an account that used to create and stopped. It is not the
- * same as an account that has never created anything, and the evidence line
+ * same as an account with no creation anywhere in the window, and the evidence line
  * says which one it is.
  */
 export const DEPTH_LAPSED_POINTS = 4;
@@ -187,13 +187,16 @@ export const TREND = {
 
 /**
  * Severity = how bad the signal is, escalated by how much it costs us if we are
- * right, and by how many independent signals agree. Both escalations are shown
- * in the UI so a CSM never sees a bare label.
+ * right, and by whether other rules fire alongside it. The second term is a
+ * co-occurrence heuristic, not evidence of independent agreement - the rules
+ * share one event stream and are correlated by construction - so it is capped
+ * at one level and withheld entirely on low-confidence accounts. Both
+ * escalations are shown in the UI so a CSM never sees a bare label.
  */
 export const SEVERITY_RULES = {
   /** ARR percentile above which an account counts as high value. */
   highValueQuantile: 0.75,
-  /** Concurrent risks needed before severity escalates on convergence. */
+  /** Concurrent risks needed before severity escalates on co-occurrence. */
   convergenceCount: 2,
 } as const;
 
@@ -229,4 +232,28 @@ export const PRIORITY_TIER_WEIGHT: Record<HealthTier, number> = {
   Watch: 2,
   "No Data": 2,
   Healthy: 0,
+};
+
+/**
+ * Floor on the priority weight, derived from the account's most severe risk.
+ *
+ * Usage health and action priority are different questions, and this is where
+ * they meet. An account can be Healthy on all four usage pillars and still
+ * carry a commercial flag that a human has to look at - a plan downgrade is the
+ * example in this book. Health must not move for that (it is not usage), but a
+ * worklist that sorts such an account to zero is telling the CSM there is
+ * nothing to do, which is false.
+ *
+ * So severity sets a floor rather than adding points: the weight used is
+ * max(tier weight, floor). On an At Risk account the tier already dominates and
+ * the floor changes nothing; on a Healthy one it is what puts the account in
+ * the queue at all. Only High and Critical qualify - Low and Medium are
+ * diagnostic, and promoting them would refill the queue with everything.
+ *
+ * This is an operational triage policy, not a churn prediction. It encodes
+ * "somebody should look at this", not "this account will leave".
+ */
+export const PRIORITY_RISK_FLOOR: Partial<Record<RiskSeverity, number>> = {
+  High: 2,
+  Critical: 3,
 };

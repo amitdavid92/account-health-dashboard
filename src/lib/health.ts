@@ -35,8 +35,14 @@ import type {
   PillarResult,
 } from "./types";
 
-/** Tier strength, used so an override can cap a tier without special-casing. */
-const TIER_RANK: Record<HealthTier, number> = {
+/**
+ * Tier strength, used so an override can cap a tier without special-casing.
+ *
+ * Exported so the UI can ask "did this cap actually lower the tier, or had the
+ * score already reached it?" without keeping a second copy of the ordering that
+ * could drift from this one. Read-only to everything outside this file.
+ */
+export const TIER_RANK: Record<HealthTier, number> = {
   "At Risk": 0,
   "No Data": 1,
   Watch: 2,
@@ -62,7 +68,7 @@ function recencyPillar(m: AccountMetrics): PillarResult {
   const days = m.daysSinceLastEvent;
   const band =
     days === null
-      ? { points: 0, label: "No activity has ever been recorded" }
+      ? { points: 0, label: `No activity recorded anywhere in the ${WINDOW.totalDays}-day window` }
       : RECENCY_BANDS.find((b) => days <= b.maxDays)!;
 
   const evidence =
@@ -94,7 +100,9 @@ function breadthPillar(m: AccountMetrics): PillarResult {
     evidence = `${plural(n, "user")} active in the last ${WINDOW.recentDays} days, out of ${plural(m.knownUsers, "user")} seen in the window`;
   }
   if (m.newUsersRecent > 0 && n > 0) {
-    evidence += `, ${m.newUsersRecent} of them new`;
+    // "Newly observed", not "new": the window is 90 days, so a user absent
+    // from the earlier part of it may well have been a customer for years.
+    evidence += `, ${m.newUsersRecent} of them not seen earlier in the window`;
   }
 
   return {
@@ -121,14 +129,14 @@ function depthPillar(m: AccountMetrics): PillarResult {
     points = scoreBands(coreValue, DEPTH_BANDS);
     evidence = `${plural(created, "guide")} created and ${shared} shared in the last ${WINDOW.recentDays} days`;
     if (m.creators > 0) {
-      evidence += ` (${m.creators} of ${plural(m.knownUsers, "user")} have ever created one)`;
+      evidence += ` (${m.creators} of ${plural(m.knownUsers, "user")} created one at some point in the window)`;
     }
   } else if (createdEver + sharedEver > 0) {
     points = DEPTH_LAPSED_POINTS;
     evidence = `Nothing created or shared in the last ${WINDOW.recentDays} days, after ${createdEver} created and ${sharedEver} shared earlier in the window`;
   } else {
     points = 0;
-    evidence = `No guide has ever been created or shared - ${m.totalEvents} events in ${WINDOW.totalDays} days, ${Math.round(m.loginShare * 100)}% of them logins`;
+    evidence = `No guide created or shared at any point in the ${WINDOW.totalDays}-day window - ${m.totalEvents} events, ${Math.round(m.loginShare * 100)}% of them logins`;
   }
 
   return {

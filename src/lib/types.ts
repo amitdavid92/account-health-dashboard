@@ -170,9 +170,9 @@ export interface AccountMetrics {
    * construction. Any user-count trend must use this one.
    */
   activeUsersPrevious30: number;
-  newUsersRecent: number; // active in last 30d, never seen before that
+  newUsersRecent: number; // active in last 30d, not seen earlier in the window
   returningUsersRecent: number;
-  creators: number; // distinct users who ever created a guide
+  creators: number; // distinct users who created a guide at some point in the window
   /** Share of the account's events produced by its single busiest user (0-1). */
   topUserShare: number;
 
@@ -278,6 +278,16 @@ export interface PortfolioKpis {
   arrAtRiskPct: number;
   arrWatch: number;
   tierCounts: Record<HealthTier, number>;
+  /**
+   * Accounts that need a human, counted once each: everything below Healthy
+   * (including No Data, which needs a pipeline question answered), plus any
+   * Healthy account carrying a High or Critical risk. Deliberately not a sum
+   * of tier counts - an account can qualify on two grounds and is still one
+   * account.
+   */
+  accountsNeedingAttention: number;
+  /** The Healthy subset of the above: strong usage, unresolved commercial flag. */
+  healthyNeedingReview: number;
   dormantAccounts: number;
   noCoreUsageAccounts: number;
   singleUserAccounts: number;

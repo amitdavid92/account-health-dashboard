@@ -183,6 +183,9 @@ export function computeMetrics(
     })
     .sort((a, b) => b.events - a.events);
 
+  // Newly *observed*, not new: this only says the user did not appear in the
+  // earlier part of the export window. The export carries no account-creation
+  // date, so a genuinely new user is indistinguishable from a returning one.
   const newUsersRecent = [...usersRecent].filter((u) => !usersPrior.has(u)).length;
   const topUserEvents = Math.max(...eventsPerUser.values());
 
@@ -220,17 +223,51 @@ export function computeMetrics(
 // Trend - computed here, gated and interpreted in risks.ts. Never scored.
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a trend is not being shown. Three different facts about the account get
+ * collapsed into "reportable: false", and a CSM reading "not enough events"
+ * under an account with 22 of them will stop believing the rest of the page -
+ * so each one is named.
+ */
+export type TrendSuppression =
+  /** Not enough events in the whole window for a 30-day comparison to mean anything. */
+  | "too_few_events"
+  /** Enough events, but nothing at all in the comparison period - the denominator is zero. */
+  | "no_baseline"
+  /**
+   * Both windows have volume, and the change between them is smaller than the
+   * threshold this dashboard requires before displaying a direction. That is a
+   * display choice for a low-volume dataset, not a significance test - none is
+   * performed anywhere in this pipeline.
+   */
+  | "change_below_threshold";
+
 export interface TrendResult {
   /** Relative change of the last 30d against the prior 60d, expressed per 30d. */
   changePct: number | null;
   /** True only when the account has enough volume for the comparison to mean anything. */
   reportable: boolean;
   direction: "up" | "down" | "flat";
+  /** Null when reportable; otherwise which of the three gates closed. */
+  suppressedBecause: TrendSuppression | null;
 }
 
 export function computeTrend(metrics: AccountMetrics, minEvents: number, minChange: number): TrendResult {
-  if (metrics.totalEvents < minEvents || metrics.eventsPriorPer30 === 0) {
-    return { changePct: null, reportable: false, direction: "flat" };
+  if (metrics.totalEvents < minEvents) {
+    return {
+      changePct: null,
+      reportable: false,
+      direction: "flat",
+      suppressedBecause: "too_few_events",
+    };
+  }
+  if (metrics.eventsPriorPer30 === 0) {
+    return {
+      changePct: null,
+      reportable: false,
+      direction: "flat",
+      suppressedBecause: "no_baseline",
+    };
   }
   const changePct =
     (metrics.eventsRecent - metrics.eventsPriorPer30) / metrics.eventsPriorPer30;
@@ -239,5 +276,6 @@ export function computeTrend(metrics: AccountMetrics, minEvents: number, minChan
     changePct,
     reportable,
     direction: changePct > 0 ? "up" : changePct < 0 ? "down" : "flat",
+    suppressedBecause: reportable ? null : "change_below_threshold",
   };
 }

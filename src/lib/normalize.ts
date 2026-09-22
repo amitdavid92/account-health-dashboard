@@ -88,6 +88,11 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
   const accountByKey = new Map<string, Account>();
   const invalidAccounts: string[] = [];
   const duplicateAccountKeys: string[] = [];
+  /** Rows where a value was unusable and a default was substituted. */
+  const planFallbacks: string[] = [];
+  const arrFallbacks: string[] = [];
+  /** Company names whose raw string differs between the two files. */
+  const nonExactNameMatches: string[] = [];
 
   for (const raw of rawAccounts) {
     if (!isNonEmptyString(raw.company_name)) {
@@ -102,14 +107,18 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
       continue;
     }
 
-    const planTier = VALID_PLANS.has(raw.plan_tier as PlanTier)
-      ? (raw.plan_tier as PlanTier)
-      : "Free";
-    const arrRaw =
-      typeof raw.arr_usd === "number" && Number.isFinite(raw.arr_usd)
-        ? raw.arr_usd
-        : Number(raw.arr_usd) || 0;
+    const planValid = VALID_PLANS.has(raw.plan_tier as PlanTier);
+    const planTier = planValid ? (raw.plan_tier as PlanTier) : "Free";
+    if (!planValid) {
+      planFallbacks.push(`${companyName} (plan_tier ${JSON.stringify(raw.plan_tier)} -> Free)`);
+    }
+
+    const arrIsNumber = typeof raw.arr_usd === "number" && Number.isFinite(raw.arr_usd);
+    const arrRaw = arrIsNumber ? (raw.arr_usd as number) : Number(raw.arr_usd) || 0;
     const arr = Math.max(0, arrRaw);
+    if (!arrIsNumber || arrRaw !== arr) {
+      arrFallbacks.push(`${companyName} (arr_usd ${JSON.stringify(raw.arr_usd)} -> ${arr})`);
+    }
 
     const account: Account = {
       slug: slugify(companyName),
@@ -136,6 +145,7 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
   let duplicateIds = 0;
   let duplicateRows = 0;
   let badTimestamps = 0;
+  let eventPlanFallbacks = 0;
   const orphanCompanies = new Map<string, number>();
 
   for (const raw of rawEvents) {
@@ -179,6 +189,15 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
         (orphanCompanies.get(raw.company_name) ?? 0) + 1,
       );
       continue;
+    }
+    // The join runs on the canonical key. Whether the raw strings were already
+    // identical is a separate, weaker fact - computed here rather than asserted.
+    if (raw.company_name.trim() !== account.companyName) {
+      nonExactNameMatches.push(`${raw.company_name} -> ${account.companyName}`);
+    }
+
+    if (!VALID_PLANS.has(raw.plan_tier as PlanTier)) {
+      eventPlanFallbacks += 1;
     }
 
     seenEventIds.add(raw.event_id);
@@ -249,7 +268,45 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
     const seen = planSeen.get(a.slug);
     return !!seen && seen.latest !== a.planTier;
   });
-  const futureEvents = events.filter((e) => e.timestampMs > snapshotMs);
+
+  /**
+   * Users shared between two workspaces of the same account. Whether the user
+   * sets overlap is a property of this export, not a rule, so it is counted
+   * rather than stated - and it is what decides whether rolling workspaces up
+   * can double-count a person.
+   */
+  const workspaceUsers = new Map<string, Set<string>>();
+  for (const e of events) {
+    if (!workspaceUsers.has(e.workspaceId)) workspaceUsers.set(e.workspaceId, new Set());
+    workspaceUsers.get(e.workspaceId)!.add(e.userId);
+  }
+  const accountsWithWorkspaceUserOverlap: string[] = [];
+  for (const a of multiWorkspaceAccounts) {
+    const ws = [...(accountToWorkspaces.get(a.slug) ?? [])];
+    const seenHere = new Set<string>();
+    let overlaps = false;
+    for (const w of ws) {
+      for (const u of workspaceUsers.get(w) ?? []) {
+        if (seenHere.has(u)) overlaps = true;
+        seenHere.add(u);
+      }
+    }
+    if (overlaps) accountsWithWorkspaceUserOverlap.push(a.companyName);
+  }
+
+  /** Smallest number of events on any account that has at least one. */
+  const eventCounts = [...eventsPerAccount.values()];
+  const minEventsPerAccount = eventCounts.length ? Math.min(...eventCounts) : 0;
+
+  /**
+   * Hour-of-day coverage, computed rather than asserted. We report the gap we
+   * measure; we do not claim to know what produced it.
+   */
+  const hourCounts = new Array<number>(24).fill(0);
+  for (const e of events) hourCounts[new Date(e.timestampMs).getUTCHours()] += 1;
+  const emptyHours = hourCounts.map((c, h) => (c === 0 ? h : -1)).filter((h) => h >= 0);
+  const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
 
   // -- Report ---------------------------------------------------------------
 
@@ -306,7 +363,7 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
     detail:
       orphanCompanies.size > 0
         ? `Companies present in usage_events.json but absent from accounts.json: ${[...orphanCompanies.keys()].join(", ")}.`
-        : "Every company in the event stream resolves to a row in accounts.json (25 of 25).",
+        : `Every company in the event stream resolves to a row in accounts.json (${new Set(events.map((e) => e.accountSlug)).size} of ${accounts.length}).`,
     resolution:
       orphanCompanies.size > 0
         ? "Excluded from account health - we cannot score a customer we have no contract record for - but surfaced here so CS can chase the gap."
@@ -321,20 +378,24 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
     detail:
       accountsWithoutEvents.length > 0
         ? `No events at all for: ${accountsWithoutEvents.map((a) => a.companyName).join(", ")}.`
-        : "Every account in accounts.json has at least one event (minimum observed: 3).",
+        : `Every account in accounts.json has at least one event (fewest observed on any account: ${minEventsPerAccount}).`,
     resolution:
       "Such accounts are tiered 'No Data', never 'At Risk' - absence of evidence is not evidence of churn, and it is just as likely to be a broken pipeline.",
     affectedAccounts: accountsWithoutEvents.map((a) => a.slug),
   });
 
+  const distinctNonExact = new Set(nonExactNameMatches);
   add({
     code: "company_name_join",
     title: "Company name consistency between the two files",
-    severity: "info",
-    count: 0,
-    detail: `All ${accounts.length} account names match the event stream exactly after canonicalization - no case, whitespace, punctuation or legal-suffix variants were found.`,
+    severity: distinctNonExact.size > 0 ? "warning" : "info",
+    count: distinctNonExact.size,
+    detail:
+      distinctNonExact.size > 0
+        ? `${distinctNonExact.size} company names differ as raw strings between the two files and were joined on the canonical key: ${[...distinctNonExact].join("; ")}.`
+        : `Every event's raw company_name is byte-identical to the account row it joined to, across ${accounts.length} accounts - the canonicalization changed no outcome on this export.`,
     resolution:
-      "Joined on the canonical key rather than the raw string, so the assumption is explicit and a fuzzy matcher can replace it in one place.",
+      "Joined on the canonical key rather than the raw string, so the assumption is explicit and a fuzzy matcher can replace it in one place. Nothing here detects a company present under two genuinely different names.",
   });
 
   add({
@@ -349,7 +410,9 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
             return `${a.companyName} (${ws.length} workspaces)`;
           })
           .join(", ") +
-        ". User sets are fully disjoint between a company's workspaces - no person appears in both."
+        (accountsWithWorkspaceUserOverlap.length > 0
+          ? `. ${accountsWithWorkspaceUserOverlap.length} of them share at least one user_id between workspaces (${accountsWithWorkspaceUserOverlap.join(", ")}), so a naive per-workspace sum would count those people twice.`
+          : ". On this export no user_id appears in more than one of a company's workspaces, so the roll-up and a per-workspace sum agree here.")
       : "Every account maps to exactly one workspace.",
     resolution:
       "Health is computed per account, with workspaces rolled up. Users are deduplicated across workspaces anyway, and the drill-down shows the per-workspace split so a CSM can see a half-adopted second team.",
@@ -367,8 +430,8 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
         : "No workspace_id is associated with more than one company name - the workspace-to-account mapping is unambiguous.",
     resolution:
       sharedWorkspaces.length > 0
-        ? "Attributed by majority event count and flagged - a workspace cannot belong to two customers."
-        : "No action needed.",
+        ? "Not resolved here: every event is attributed by its own company_name, so a shared workspace's events are split across both accounts. The conflict is surfaced for a human, because picking a winner automatically would move usage between two customers' verdicts on a guess."
+        : "No action needed - the check runs, and found nothing to resolve.",
   });
 
   add({
@@ -379,8 +442,9 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
     detail:
       crossAccountUsers.length > 0
         ? `${crossAccountUsers.length} user_ids appear under multiple companies.`
-        : "No user_id appears under more than one company or workspace, so counting distinct users per account is safe.",
-    resolution: "Distinct-user counts are per account either way.",
+        : "No user_id appears under more than one company, so per-account distinct-user counts cannot double-count a person across accounts.",
+    resolution:
+      "Distinct-user counts are per account either way. This says nothing about one human holding two user_ids - the export carries no identity to check that against.",
   });
 
   add({
@@ -406,25 +470,62 @@ export function normalize(rawAccounts: RawAccount[], rawEvents: RawEvent[]): Nor
   add({
     code: "timestamp_anomalies",
     title: "Timestamp integrity",
-    severity: badTimestamps > 0 || futureEvents.length > 0 ? "warning" : "info",
-    count: badTimestamps + futureEvents.length,
+    severity: badTimestamps > 0 ? "warning" : "info",
+    count: badTimestamps,
     detail:
-      badTimestamps > 0 || futureEvents.length > 0
-        ? `${badTimestamps} unparseable and ${futureEvents.length} after the snapshot.`
-        : "All timestamps parse as ISO-8601 UTC and fall inside the export window; none are in the future.",
+      badTimestamps > 0
+        ? `${badTimestamps} rows carry a timestamp that does not parse.`
+        : "Every timestamp parses as ISO-8601 UTC, and the parsed values span the reported window.",
     resolution:
-      "Unparseable rows are dropped rather than guessed. 'Today' is pinned to the latest event in the export, not wall-clock time, so results are reproducible.",
+      "Unparseable rows are dropped rather than guessed. Note what this check does NOT establish: 'today' is defined as the latest event in the export, so no event can be later than it by construction, and comparing events against that anchor would be circular. Detecting a genuinely future-dated export needs an external reference time (the export's own generation timestamp, or wall-clock at ingest), which this file does not carry. The anchor is kept because it makes results reproducible.",
   });
+
+  const gapRuns: [number, number][] = [];
+  for (const h of emptyHours) {
+    const last = gapRuns[gapRuns.length - 1];
+    if (last && last[1] === h - 1) last[1] = h;
+    else gapRuns.push([h, h]);
+  }
 
   add({
     code: "hour_of_day_gap",
-    title: "No events between 09:00 and 19:00 UTC",
-    severity: "warning",
-    count: 0,
+    title: "Hour-of-day coverage is incomplete",
+    severity: emptyHours.length > 0 ? "warning" : "info",
+    count: emptyHours.length,
     detail:
-      "Activity is confined to 19:00-09:00 UTC across all 90 days, which no real customer base produces. This is an artifact of how the sample was generated.",
+      emptyHours.length > 0
+        ? `${emptyHours.length} of the 24 UTC hours contain no events at all across the whole window (${gapRuns
+            .map(([a, b]) => (a === b ? hh(a) : `${hh(a)}-${hh(b + 1)}`))
+            .join(", ")}), while the remaining hours carry ${events.length} events fairly evenly. A contiguous dead band this wide is not what a real customer base produces; the cause is not something this export lets us determine.`
+        : "Events occur in all 24 UTC hours.",
     resolution:
-      "Recorded as a hard limitation: no hour-of-day or business-hours analysis is built anywhere in this dashboard, because the underlying distribution is not real. Daily and weekly aggregates are unaffected.",
+      "Recorded as an observation, not a diagnosis. No hour-of-day or business-hours analysis is built anywhere in this dashboard, because the distribution cannot be trusted to reflect behaviour. Daily and weekly aggregates are unaffected, since they roll up across the gap.",
+  });
+
+  const fallbackDetails = [
+    ...planFallbacks.map((d) => `plan: ${d}`),
+    ...arrFallbacks.map((d) => `ARR: ${d}`),
+  ];
+  add({
+    code: "substituted_values",
+    title: "Values replaced by a fallback during normalization",
+    severity: fallbackDetails.length > 0 || eventPlanFallbacks > 0 ? "warning" : "info",
+    count: planFallbacks.length + arrFallbacks.length + eventPlanFallbacks,
+    detail:
+      fallbackDetails.length > 0 || eventPlanFallbacks > 0
+        ? [
+            fallbackDetails.length > 0
+              ? `Account rows: ${fallbackDetails.join("; ")}.`
+              : null,
+            eventPlanFallbacks > 0
+              ? `${eventPlanFallbacks} events carried an unrecognised plan_tier and fell back to the account's contracted plan.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "Every account row's plan_tier is one of Free/Pro/Enterprise and every arr_usd is a finite, non-negative number, so no fallback was applied. Every event's plan_tier is recognised.",
+    resolution:
+      "The normalizer substitutes a default rather than dropping the row (plan -> Free, ARR -> 0 or clamped to 0, event plan -> the contracted plan). That keeps the account visible, but a substituted value is a guess and the affected accounts are named here rather than silently corrected.",
   });
 
   const users = new Set(events.map((e) => e.userId));

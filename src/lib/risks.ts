@@ -18,11 +18,20 @@
  * it cost us if we are right, and does anything else agree. Every escalation is
  * returned as a string so the UI never shows a bare label.
  *
- * Two guards stop the escalations from manufacturing false urgency:
+ * Known limitation of the second term. The rules are NOT independent of each
+ * other: dormancy, single-user dependency and usage collapse are all computed
+ * from the same thin event stream, and several of them tend to fire together on
+ * the same underlying fact. Counting co-occurrence as corroboration therefore
+ * overstates the evidence to some degree even on a well-covered account. It is
+ * kept because a CSM reading two flags at once does reasonably escalate, and
+ * because every step is printed rather than hidden - but it is a heuristic
+ * about co-occurrence, not a statement that N independent signals agree.
  *
- *   - On a low-confidence account, convergence does not escalate. Several rules
- *     firing on four events is the same thin evidence counted several times,
- *     not four independent signals agreeing.
+ * Two guards stop the escalations from manufacturing outright false urgency:
+ *
+ *   - On a low-confidence account, co-occurrence does not escalate at all.
+ *     Several rules firing on four events is the same handful of events read
+ *     several ways.
  *   - A risk whose own definition includes ARR is not escalated for ARR again.
  */
 
@@ -62,6 +71,18 @@ export function quantile(values: number[], q: number): number {
 }
 
 type Draft = Omit<Risk, "severity" | "escalations">;
+
+/**
+ * The two co-occurrence escalation strings, exported so the UI and the tests
+ * match on the same text instead of each keeping its own copy of the wording.
+ */
+export function convergenceEscalation(n: number): string {
+  return `+1 for ${n} risks firing together (these rules read the same event stream, so they are not independent)`;
+}
+
+export function convergenceWithheld(n: number): string {
+  return `no co-occurrence escalation: ${n} rules on too little activity to corroborate each other`;
+}
 
 export function detectRisks(
   account: Account,
@@ -142,7 +163,12 @@ export function detectRisks(
       code: "single_user",
       title: "Single-user dependency",
       baseSeverity: "High",
-      evidence: `1 active user in the last ${WINDOW.recentDays} days, out of ${m.knownUsers} seen in the window. That user produced ${pct(m.topUserShare)} of all activity.`,
+      // "That user produced X%" would be wrong: topUserShare belongs to the
+      // busiest user over the whole window, and on this export that is a
+      // different person from the one still active on 3 of the 4 accounts this
+      // rule fires on. The concentration is stated as its own fact about the
+      // account, not attributed to the remaining user.
+      evidence: `1 active user in the last ${WINDOW.recentDays} days, out of ${m.knownUsers} seen in the window. The busiest single user in the window accounts for ${pct(m.topUserShare)} of all activity.`,
       whyItMatters:
         "The account survives on one person. If they change role or leave, usage goes to zero with no warning and no internal advocate at renewal.",
       affectsHealth: true,
@@ -250,10 +276,12 @@ function finalise(
   const highValue = account.arrUsd >= ctx.highValueArrThreshold && account.arrUsd > 0;
 
   /**
-   * Convergence is corroboration only when the signals are independent. On an
-   * account with almost no events, several rules firing at once is not three
-   * findings - it is the same thin evidence counted three times, so the
-   * escalation is withheld and the reason is shown instead.
+   * Co-occurrence is treated as weak corroboration, never as proof. These rules
+   * read the same event stream and are correlated by construction, so this term
+   * is deliberately capped at a single level. On an account with almost no
+   * events it is withheld entirely: several rules firing on four events is the
+   * same thin evidence counted several times, and the reason is printed instead
+   * of the escalation.
    */
   const converging =
     drafts.length >= SEVERITY_RULES.convergenceCount && !health.lowConfidence;
@@ -272,13 +300,9 @@ function finalise(
 
       if (converging) {
         severity = escalate(severity, 1);
-        escalations.push(
-          `+1 for ${drafts.length} converging risks`,
-        );
+        escalations.push(convergenceEscalation(drafts.length));
       } else if (drafts.length >= SEVERITY_RULES.convergenceCount && health.lowConfidence) {
-        escalations.push(
-          `no convergence escalation: ${drafts.length} rules on too little activity to corroborate each other`,
-        );
+        escalations.push(convergenceWithheld(drafts.length));
       }
 
       /**

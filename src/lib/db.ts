@@ -343,13 +343,29 @@ export interface AccountFilters {
   sort?: "priority" | "score" | "arr" | "silent" | "name";
 }
 
-const SORT_SQL: Record<NonNullable<AccountFilters["sort"]>, string> = {
+export type SortKey = NonNullable<AccountFilters["sort"]>;
+
+const SORT_SQL: Record<SortKey, string> = {
   priority: "h.priority_score DESC, a.arr_usd DESC",
   score: "h.score ASC, a.arr_usd DESC",
   arr: "a.arr_usd DESC",
   silent: "h.days_since_last_event DESC NULLS FIRST, a.arr_usd DESC",
   name: "a.company_name ASC",
 };
+
+export const SORT_KEYS = Object.keys(SORT_SQL) as SortKey[];
+
+/**
+ * The one place a `sort` value from outside is turned into a key.
+ *
+ * SORT_SQL is interpolated into the ORDER BY clause, so an unrecognised value
+ * would splice `undefined` into the SQL and fail the query. Every caller -
+ * the page, the API route, the chat tool - resolves through here, so a
+ * hand-typed `?sort=whatever` falls back to the default instead of erroring.
+ */
+export function parseSort(raw: unknown): SortKey {
+  return typeof raw === "string" && raw in SORT_SQL ? (raw as SortKey) : "priority";
+}
 
 export function listAccounts(filters: AccountFilters = {}): AccountListRow[] {
   const where: string[] = [];
@@ -383,7 +399,7 @@ export function listAccounts(filters: AccountFilters = {}): AccountListRow[] {
     FROM accounts a
     JOIN account_health h ON h.account_slug = a.slug
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY ${SORT_SQL[filters.sort ?? "priority"]}
+    ORDER BY ${SORT_SQL[parseSort(filters.sort)]}
   `;
 
   return db().prepare(sql).all(...params).map((r) => toListRow(r as Row));
