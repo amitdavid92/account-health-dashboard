@@ -563,7 +563,7 @@ function AccountRow({ account: a, delta }: { account: AccountListRow; delta: num
               so the two can never disagree. */}
           {isHealthyButFlagged(a) && (
             <span
-              className="text-warn-ink"
+              className="text-flag-ink"
               title={`${a.topRisk?.title} (${a.topRisk?.severity}) — see Signal to act on`}
             >
               <FlagGlyph />

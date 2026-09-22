@@ -148,7 +148,7 @@ export function FlagGlyph() {
 export function FlaggedChip({ count }: { count: number }) {
   return (
     <span
-      className="inline-flex h-[21px] items-center gap-[5px] whitespace-nowrap rounded-[5px] bg-warn-wash pl-[6px] pr-[7px] text-[11.5px] font-medium text-warn-ink"
+      className="inline-flex h-[21px] items-center gap-[5px] whitespace-nowrap rounded-[5px] bg-flag-wash pl-[6px] pr-[7px] text-[11.5px] font-medium text-flag-ink"
       title="Healthy on every usage pillar, but carrying a High or Critical flag that is not a usage problem"
     >
       <FlagGlyph />

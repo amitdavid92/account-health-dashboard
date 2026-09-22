@@ -53,6 +53,14 @@
   --none-ink: #52525b;
   --none-wash: rgba(113, 113, 122, 0.11);
 
+  /* Not a tier or a severity - a Healthy account that still carries a
+     commercial/risk flag is a third, orthogonal fact, so it gets its own hue
+     rather than borrowing warn's amber, which is already claimed by Watch
+     and by Medium/High severity and read as "the same thing" next to them. */
+  --flag: #7c3aed;
+  --flag-ink: #5b21b6;
+  --flag-wash: rgba(124, 58, 237, 0.14);
+
   --grid: #ececef;
   --track: #ebebee;
   --card-shadow: 0 1px 2px rgba(24, 24, 27, 0.05);
@@ -104,6 +112,10 @@
     --none-ink: #a1a1aa;
     --none-wash: rgba(161, 161, 170, 0.12);
 
+    --flag: #a78bfa;
+    --flag-ink: #c4b5fd;
+    --flag-wash: rgba(167, 139, 250, 0.18);
+
     --grid: #26262b;
     --track: #26262b;
     --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -151,6 +163,10 @@
   --none-ink: #a1a1aa;
   --none-wash: rgba(161, 161, 170, 0.12);
 
+  --flag: #a78bfa;
+  --flag-ink: #c4b5fd;
+  --flag-wash: rgba(167, 139, 250, 0.18);
+
   --grid: #26262b;
   --track: #26262b;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -196,6 +212,10 @@
   --color-none: var(--none);
   --color-none-ink: var(--none-ink);
   --color-none-wash: var(--none-wash);
+
+  --color-flag: var(--flag);
+  --color-flag-ink: var(--flag-ink);
+  --color-flag-wash: var(--flag-wash);
 
   --color-grid: var(--grid);
   --color-track: var(--track);
