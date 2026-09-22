@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 interface ChatMessage {
@@ -15,6 +16,25 @@ const EXAMPLES = [
 ];
 
 /**
+ * Renders the two things the model is told to emit, and nothing else:
+ * line breaks (preserved by whitespace-pre-wrap on the bubble) and **bold**
+ * company names. A full markdown renderer would be a dependency and a much
+ * larger attack surface for one styling nicety; anything else the model sends
+ * falls through as plain text rather than as stray asterisks in a heading.
+ */
+function formatReply(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*\n]+\*\*)/g).map((part, i) =>
+    part.length > 4 && part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={i} className="font-semibold">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      part
+    ),
+  );
+}
+
+/**
  * A chat panel over the same read path the pages use - see chat-tools.ts.
  * Stateless on the wire: only plain user/assistant text round-trips to the
  * client, so there is nothing but this array to persist between messages.
@@ -24,6 +44,9 @@ export function ChatAssistant() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const retryRef = useRef<ChatMessage[] | null>(null);
+  const inFlight = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,34 +59,52 @@ export function ChatAssistant() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, pending]);
+  }, [messages, pending, error]);
+
+  /** Drops the transcript so the next question starts a fresh context. The
+   *  server is stateless, so clearing this array is the whole reset. */
+  function resetConversation() {
+    if (inFlight.current) return;
+    setMessages([]);
+    setInput("");
+    setError(null);
+    retryRef.current = null;
+  }
 
   async function send(text: string) {
     const question = text.trim();
     if (!question || pending) return;
 
     const next = [...messages, { role: "user", content: question } as ChatMessage];
+    await submit(next);
+  }
+
+  async function submit(next: ChatMessage[]) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    retryRef.current = next;
     setMessages(next);
     setInput("");
+    setError(null);
     setPending(true);
-
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: next }),
+        signal: AbortSignal.timeout(50_000),
       });
       const data = (await res.json()) as { reply?: string; error?: string };
-      setMessages([
-        ...next,
-        { role: "assistant", content: data.reply ?? data.error ?? "Something went wrong." },
-      ]);
+      if (!res.ok || data.error || !data.reply) {
+        setError(data.error ?? "The assistant is unavailable. Please try again.");
+        return;
+      }
+      retryRef.current = null;
+      setMessages([...next, { role: "assistant", content: data.reply }]);
     } catch {
-      setMessages([
-        ...next,
-        { role: "assistant", content: "Couldn't reach the chat assistant - check your connection and try again." },
-      ]);
+      setError("Couldn't get a response in time. Please try again; you can still use the dashboard.");
     } finally {
+      inFlight.current = false;
       setPending(false);
     }
   }
@@ -112,6 +153,15 @@ export function ChatAssistant() {
             <span className="flex-1" />
             <button
               type="button"
+              onClick={resetConversation}
+              disabled={pending || (messages.length === 0 && !error)}
+              title="Start a new conversation"
+              className="h-[30px] rounded-[7px] border border-hairline-strong bg-surface px-[9px] text-[12px] text-ink-2 hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:text-ink-2"
+            >
+              New chat
+            </button>
+            <button
+              type="button"
               onClick={() => setOpen(false)}
               aria-label="Close chat"
               className="grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-hairline-strong bg-surface text-ink-2 hover:text-ink"
@@ -132,8 +182,10 @@ export function ChatAssistant() {
               <div className="flex flex-col gap-[10px]">
                 <p className="text-[12.5px] leading-[1.55] text-ink-2">
                   Ask about any account&apos;s score, the portfolio, or the data-quality report.
-                  Every answer is read from the same numbers the dashboard shows - nothing here is
-                  invented.
+                  The model can only read numbers through the same tools the dashboard reads, so the
+                  figures come from the pipeline rather than from the model. The wording around them
+                  is the model&apos;s own and is not checked automatically — open the account page if
+                  an answer matters.
                 </p>
                 <div className="flex flex-col gap-[6px]">
                   {EXAMPLES.map((q) => (
@@ -153,24 +205,34 @@ export function ChatAssistant() {
                 {messages.map((m, i) => (
                   <div
                     key={i}
-                    className={`max-w-[88%] rounded-[10px] px-3 py-2 text-[12.5px] leading-[1.5] ${
+                    className={`max-w-[88%] whitespace-pre-wrap rounded-[10px] px-3 py-2 text-[12.5px] leading-[1.55] ${
                       m.role === "user"
                         ? "ml-auto bg-accent-wash text-accent-ink"
                         : "mr-auto bg-inset text-ink"
                     }`}
                   >
-                    {m.content}
+                    {m.role === "assistant" ? formatReply(m.content) : m.content}
                   </div>
                 ))}
                 {pending && (
                   <div className="mr-auto max-w-[88%] rounded-[10px] bg-inset px-3 py-2 text-[12.5px] text-ink-3">
-                    Thinking…
+                    Checking the data… If the AI service is busy, this may take up to 45 seconds.
                   </div>
                 )}
               </div>
             )}
           </div>
 
+          {error && (
+            <div role="alert" className="border-t border-hairline px-4 py-3 text-[12.5px] text-ink-2">
+              <p>{error}</p>
+              <button type="button" disabled={pending} className="mt-2 underline disabled:opacity-40"
+                onClick={() => { if (retryRef.current) void submit(retryRef.current); }}>
+                Try again
+              </button>
+              <Link href="/?tier=At%20Risk" onClick={() => setOpen(false)} className="ml-4 underline">View at-risk accounts</Link>
+            </div>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
