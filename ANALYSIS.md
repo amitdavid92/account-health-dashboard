@@ -39,7 +39,7 @@ decline is either specific to that account or it is noise. That is the question 
 ## 2. Data quality
 
 The brief warns the export "wasn't cleaned up". It is worth stating plainly: **most of the expected
-problems are not present.** All twelve checks are reported — including the eight that came back
+problems are not present.** All thirteen checks are reported — including the ones that came back
 clean — because "no duplicates were found" and "duplicates were never looked for" are very different
 statements about a dataset, and only one of them earns trust in the numbers built on top.
 
@@ -48,15 +48,16 @@ statements about a dataset, and only one of them earns trust in the numbers buil
 | 1 | Missing or malformed fields | **0** in either file | Verified, not assumed |
 | 2 | Duplicate `event_id` | **0** | Verified |
 | 3 | Replayed rows (same workspace + user + type + timestamp, new id) | **0** | Verified; the dedup runs anyway, since an export replay must never inflate an account |
-| 4 | Company names across the two files | **Exact 1:1**, 25↔25, no case, whitespace, punctuation or legal-suffix variants | Joined on a canonical key rather than the raw string, so the assumption is explicit and swappable for fuzzy matching in one place |
+| 4 | Company names across the two files | **0 raw-string differences** — every event's `company_name` is byte-identical to the account row it joins to, so canonicalization changes no outcome here. Counted, not assumed | Joined on a canonical key rather than the raw string, so the assumption is explicit and swappable for fuzzy matching in one place. Nothing detects a company filed under two genuinely different names |
 | 5 | Accounts with no events | **0** — the quietest has 3 | The zero-event path is still implemented; see §8 |
 | 6 | Events with no matching account | **0** | Orphan handling still implemented and reported |
 | 7 | Workspaces claimed by two companies | **0** | Mapping is unambiguous |
-| 8 | Users appearing under two accounts | **0** | Distinct-user counts per account are safe |
-| 9 | Timestamps | All parse as ISO-8601 UTC, all inside the window, none in the future | "Today" pinned to the latest event, never the clock |
-| 10 | **Accounts with more than one workspace** | **3** — Alderman Freight (17+18), Brightside Logistics (21+15), Cobalt Financial (29+11). **User sets fully disjoint** — no person appears in both | Roll up to the account, deduplicate users, show the split in the drill-down |
+| 8 | Users appearing under two accounts | **0** `user_id`s span two companies | Distinct-user counts per account cannot double-count a person. Says nothing about one human holding two `user_id`s — the export carries no identity to check that against |
+| 9 | Timestamps | All parse as ISO-8601 UTC | "Today" is pinned to the latest event, never the clock. **There is no independent future-date check**: comparing events against an anchor derived from those same events is circular, and the export carries no external reference time |
+| 10 | **Accounts with more than one workspace** | **3** — Alderman Freight (17+18), Brightside Logistics (21+15), Cobalt Financial (29+11). Computed per account: **no `user_id` appears in two of a company's workspaces on this export**, so the roll-up and a per-workspace sum agree here | Roll up to the account, deduplicate users anyway, show the split in the drill-down |
 | 11 | **`plan_tier` drift between the files** | **2** — Marlowe & Reed and Thistle & Vine Events are Enterprise in `accounts.json` but Pro on their most recent events | See below |
-| 12 | **Hour-of-day distribution** | **No events at all between 09:00 and 19:00 UTC**, across all 90 days | See below |
+| 12 | **Hour-of-day distribution** | **10 of the 24 UTC hours (09:00–19:00) contain no events at all**, measured across the window; the other 14 carry 480 events fairly evenly | See below |
+| 13 | **Substituted values** | **0** — every `plan_tier` is one of Free/Pro/Enterprise and every `arr_usd` is finite and non-negative, so no fallback was applied | The normalizer substitutes a default rather than dropping the row (plan → Free, ARR → 0). When that happens the affected accounts are named in the report, never silently corrected |
 
 ### On the plan drift (#11)
 
@@ -70,14 +71,17 @@ by — but it is not *usage*, so it never touches the health score. Thistle & Vi
 usage measure and still carries a High plan-downgrade flag; both statements are true and the
 dashboard shows both.
 
-### On the timestamp artifact (#12)
+### On the hour-of-day gap (#12)
 
-Activity is confined to 19:00–09:00 UTC on every one of the 90 days. No real customer base produces
-that; it is an artifact of how the sample was generated.
+Counting events by UTC hour over the whole window gives 14 hours carrying 25–40 events each and a
+contiguous run of 10 hours — 09:00 through 19:00 — carrying zero. A dead band that wide and that
+clean is not what a real customer base produces. What *caused* it is not something this export lets
+us determine, so the report states the measurement and stops there.
 
-The consequence is a hard constraint, not a footnote: **no hour-of-day or day-of-week analysis is
-built anywhere in this dashboard.** The data would happily support a "peak usage hours" chart. It
-would be a chart of the generator, not of the customers. Daily and weekly aggregates are unaffected.
+The consequence is a hard constraint either way: **no hour-of-day or day-of-week analysis is built
+anywhere in this dashboard.** The data would happily support a "peak usage hours" chart, and that
+chart would be reporting an artifact as customer behaviour. Daily and weekly aggregates are
+unaffected, since they roll up across the gap.
 
 ---
 
@@ -207,7 +211,7 @@ right, and does anything else agree.** All three inputs are visible on the accou
 Two guards stop the escalations from manufacturing urgency:
 
 - **A risk whose definition already contains ARR is not escalated for ARR.** "High-value account, minimal adoption" would otherwise count the same fact twice.
-- **Convergence does not escalate on a low-confidence account.** When five rules fire on an account with four events, that is the same thin evidence read five ways, not five independent signals agreeing. The account page says so in as many words rather than silently not escalating.
+- **Co-occurrence is not independence.** These rules read one event stream and are correlated by construction — dormancy, single-user dependency and usage collapse frequently describe the same underlying fact. The term is therefore capped at one level and framed as co-occurrence, not corroboration. **On a low-confidence account it is withheld entirely:** when five rules fire on an account with four events, that is the same thin evidence read five ways. The account page prints the withheld escalation rather than silently skipping it.
 
 The result is 6 Critical and 13 High across 19 risks — a severity spread that discriminates, rather
 than everything reading red.
@@ -236,10 +240,10 @@ than being asserted.
 | **Many events, one user** | Pinnacle (1 of 2 active), Harborview (1 of 4) | Breadth scores near zero and the tier is capped below Healthy. The score alone would have called some of these Healthy |
 | **High ARR, low usage** | Pinnacle $185K/4 events, Redwood $139K/5 | Health reflects the usage; ARR drives it to the top of the worklist through priority. Also raises its own named risk |
 | **Declining usage** | Cedarline −85%, Gladwell −56% | Reported as evidence and risk, never as points. Cedarline is At Risk on its pillars regardless; Gladwell is Healthy and its decline is shown at High, not Critical |
-| **Recovery after a gap** | Silvercreek and Thistle & Vine, 3 new users each in 30d | Recency and Breadth are measured on the recent window, so a recovering account reads as recovering rather than as its dead history |
+| **Recovery after a gap** | Silvercreek and Thistle & Vine, 3 newly observed users each in 30d | Recency and Breadth are measured on the recent window, so a recovering account reads as recovering rather than as its dead history. "Newly observed" means absent from the earlier part of this window — the export carries no account-creation date, so a genuinely new user cannot be told apart from a returning one |
 | **Multiple workspaces** | 3 accounts | Rolled up to the account; users deduplicated (a no-op here, since the sets are disjoint). The drill-down shows the per-workspace split so a half-adopted second team is visible |
 | **Inconsistent plan** | 2 accounts | Contract wins for display; drift becomes a commercial risk flag outside the score |
-| **Healthy account with a risk** | Thistle & Vine, Gladwell, Fernhill | Severity held at High. Critical means act this week; on a thriving account a single flag is a conversation, not a fire |
+| **Healthy account with a risk** | Thistle & Vine, Gladwell, Fernhill | Severity held at High — Critical means act this week, and on a thriving account a single flag is a conversation, not a fire. The health score does not move, but the priority floor (§9) keeps the account in the queue and the drill-down points at the flag instead of saying nothing needs intervention |
 
 ---
 
@@ -296,12 +300,33 @@ would be the only thing catching it.
 ### Priority
 
 ```
-priority = tier weight (At Risk 3 · Watch 2 · Healthy 0) × (1 + log₁₀(1 + ARR))
+weight   = max( tier weight (At Risk 3 · Watch 2 · No Data 2 · Healthy 0),
+                risk floor  (Critical 3 · High 2 · everything else 0) )
+priority = weight × (1 + log₁₀(1 + ARR))
 ```
 
-ARR is log-scaled so a $218K account outranks a $66K one without one whale flattening the list, and
-Healthy accounts score exactly 0 — there is nothing to prioritise. The list opens on **Pinnacle
-Manufacturing: $185,568, one active user, 21 days silent, four events in a quarter.**
+ARR is log-scaled so a $218K account outranks a $66K one without one whale flattening the list. The
+list opens on **Pinnacle Manufacturing: $185,568, one active user, 21 days silent, four events in a
+quarter.**
+
+**Why the floor exists.** Health is usage and nothing else, which is the right call — but it leaves
+a gap the first version had: Thistle & Vine is Healthy on all four pillars *and* carries a High
+plan-downgrade flag, and with a tier weight of 0 it sorted to the bottom of the queue with the
+drill-down telling the CSM that nothing needed intervention. Both of those cannot be true. The fix
+keeps the axes separate rather than merging them: the health score does not move for a commercial
+flag, and the priority weight takes a floor from the account's most severe risk, so the account
+appears in the worklist. Taking the maximum rather than the sum stops the two from double-counting —
+an At Risk account is already weighted 3, and a Critical floor adds nothing to it. On this snapshot
+it moves three Healthy accounts (Thistle & Vine, Fernhill Energy, Gladwell Education) off zero and
+changes nothing else.
+
+Only High and Critical set a floor; Low and Medium are diagnostic, and promoting them would put the
+whole book back in the queue. Severity is held at High on a Healthy account (§7), so a Healthy
+account can reach weight 2 but never 3 — at equal ARR a genuinely failing account still outranks it.
+
+This is an **operational triage policy, not a churn model.** It encodes "somebody should look at
+this, and here is roughly how much it costs us if they are right". There are no churn labels in this
+dataset, so nothing here is fitted to outcomes and no number in it should be read as a probability.
 
 ---
 

@@ -47,3 +47,9 @@ data/health.db
 data/health.db-wal
 data/health.db-shm
 tsconfig.tsbuildinfo
+
+# AI assistant scaffolding - tooling config, not part of the deliverable.
+# AGENTS.md is regenerated locally by `next dev`, so it is ignored rather than
+# deleted; CLAUDE.md only pointed at it.
+AGENTS.md
+CLAUDE.md
