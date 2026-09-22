@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
-import { Card, CardHead, Disclosure, Sparkline, TierChip, initialsOf, money } from "@/components/primitives";
+import { Card, CardHead, Disclosure, FlaggedChip, Sparkline, TierChip, initialsOf, money } from "@/components/primitives";
 import {
   listAccounts,
   getRawData,
@@ -230,11 +230,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
             {view.tierCounts["No Data"] > 0 && (
               <TierChip tier="No Data" suffix={String(view.tierCounts["No Data"])} />
             )}
-            {view.healthyNeedingReview > 0 && (
-              <span title="Healthy on every usage pillar, but carrying a High or Critical flag that is not a usage problem">
-                + {view.healthyNeedingReview} healthy with an open flag
-              </span>
-            )}
+            {view.healthyNeedingReview > 0 && <FlaggedChip count={view.healthyNeedingReview} />}
           </span>
         </Card>
 

@@ -123,6 +123,40 @@ export function PillarGlyph({ pillarKey }: { pillarKey: PillarKey }) {
   );
 }
 
+/**
+ * A small flag: pole + notched pennant, in the same stroke-only hand as
+ * TierGlyph and PillarGlyph. "A Healthy account still carrying a flag" is a
+ * fact orthogonal to tier, so it gets its own glyph rather than borrowing a
+ * tier's shape for a different meaning.
+ */
+function FlagGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M2.3 1.6v8.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M2.3 2.1 9.2 2.1 6.2 4.6 9.2 7.1 2.3 7.1Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * "N Healthy accounts still carry a flag" - built as a peer of TierChip (same
+ * height, same pill shape) so it reads as one more count in the row instead
+ * of a trailing sentence a reader has to parse to find the number. The full
+ * explanation stays on the tooltip, but the glyph and the word "flagged" now
+ * carry the meaning on their own without it.
+ */
+export function FlaggedChip({ count }: { count: number }) {
+  return (
+    <span
+      className="inline-flex h-[21px] items-center gap-[5px] whitespace-nowrap rounded-[5px] bg-warn-wash pl-[6px] pr-[7px] text-[11.5px] font-medium text-warn-ink"
+      title="Healthy on every usage pillar, but carrying a High or Critical flag that is not a usage problem"
+    >
+      <FlagGlyph />
+      {count} flagged
+    </span>
+  );
+}
+
 export function TierChip({ tier, suffix }: { tier: HealthTier; suffix?: string }) {
   return (
     <span
