@@ -107,10 +107,14 @@ reason it was chosen, and `/method` renders that file directly. The scoring stag
 functions, which is what lets `tests/pipeline.test.ts` cross-check the stored results against a
 fresh in-memory run.
 
-## Chat assistant (bonus, optional)
+## Chat assistant (my own addition, not part of the brief)
 
-A panel beside the theme toggle answers questions like *"which accounts are At Risk and why?"*.
-It is a small tool-calling loop over the Gemini API, **not a second model of the data**: the four
+The brief asks for four things — a definition of health, a score, an API, and a UI with a
+drill-down. This panel is none of them; I added it on my own initiative because it felt like a
+natural extension of "ask the data," not because the brief implies a bonus feature.
+
+A panel beside the theme toggle answers questions like *"which accounts are At Risk and why?"*. It
+is a small tool-calling loop over the Gemini API, **not a second model of the data**: the four
 tools in `src/lib/chat-tools.ts` are read-only wrappers over the same `src/lib/db.ts` the pages
 use, so every figure comes from the stored pipeline output. The prose around those figures is
 generated and nothing verifies it — the account page stays the authority, and the panel says so.
