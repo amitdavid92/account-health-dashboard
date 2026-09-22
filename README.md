@@ -67,38 +67,28 @@ is not a churn prediction.
 
 ## Assumptions
 
-The ones that would change the answer if they were wrong — the full list, with reasoning, is in
+The ones that would change the answer if they were wrong — full reasoning for each is in
 [ANALYSIS.md §12](ANALYSIS.md).
 
-1. **`company_name` joins the two files.** Verified exactly 1:1 on this snapshot, but the join still
-   runs through canonicalization (case, whitespace, punctuation, legal suffixes) so a fuzzy matcher
-   can replace it in one place.
-2. **`accounts.json` is the commercial source of truth** for plan and ARR. `plan_tier` on an event is
-   historical state; a disagreement is surfaced as a risk, never silently resolved.
-3. **The account is the unit of health.** Workspaces roll up and users are deduplicated across them.
-4. **"Today" is the latest event in the export (2026-09-13), not wall-clock time** — otherwise every
-   account drifts into dormancy and the demo rots.
-5. **`guide_created` and `guide_shared` are the product's core value.** The most product-opinionated
-   call in the model, and the one most worth arguing with: it is what makes Cedarline Insurance At
-   Risk despite a healthy-looking event count.
-6. **Absence of events means absence of usage, not a broken pipeline.** Untestable from a single
-   snapshot — which is exactly why a zero-event account is `No Data` rather than `At Risk`.
-
+1. `company_name` joins the two files (verified 1:1 on this snapshot).
+2. `accounts.json` is the commercial source of truth for plan and ARR.
+3. The account, not the workspace, is the unit of health.
+4. "Today" is the latest event in the export (2026-09-13), not wall-clock time.
+5. `guide_created` and `guide_shared` are the product's core value — the most opinionated call in the model.
+6. Absence of events means absence of usage, not a broken pipeline.
 
 ## Architecture
 
-```
-data/*.json          the raw export, unmodified
-  ↓ scripts/ingest.ts
-src/lib/normalize.ts canonicalize, join, validate → DataQualityReport
-src/lib/metrics.ts   per-account metrics          (pure)
-src/lib/health.ts    pillars → score → overrides → tier  (pure)
-src/lib/risks.ts     risk detection + severity derivation (pure)
-  ↓ src/lib/db.ts
-data/health.db       SQLite: flat columns for filtering, JSON for evidence payloads
-  ↓
-/api/*  →  Next.js UI
-```
+| Stage | File | Does |
+|---|---|---|
+| Raw export | `data/*.json` | Unmodified input |
+| Ingest | `scripts/ingest.ts` | Runs the pipeline below, once |
+| Normalize | `src/lib/normalize.ts` | Canonicalize, join, validate → `DataQualityReport` (pure) |
+| Metrics | `src/lib/metrics.ts` | Per-account metrics (pure) |
+| Health | `src/lib/health.ts` | Pillars → score → overrides → tier (pure) |
+| Risks | `src/lib/risks.ts` | Risk detection + severity derivation (pure) |
+| Store | `src/lib/db.ts` | Writes `data/health.db` — flat columns for filtering, JSON for evidence payloads |
+| Serve | `/api/*` → Next.js UI | Reads the stored verdict, never recomputes |
 
 Health is computed once during ingest and stored — the API serves a verdict rather than
 recomputing one, so the UI and the database can never drift apart, and `sqlite3 data/health.db`
@@ -145,18 +135,10 @@ to be whoever is reading this repo, not the person using the dashboard day to da
 
 ## What I'd build next for production
 
-1. **Fit the thresholds instead of calibrating them.** Everything here is a defensible guess. With
-   12 months of renewal outcomes the bands become a logistic fit — while keeping the "score = sum of
-   stated reasons" contract, which is the part worth protecting.
-2. **Per-workspace ingestion-freshness monitoring.** Assumption 6 is the dangerous one: today a
-   broken pipeline and a churning customer look identical. A last-seen heartbeat separates them
-   before a CSM acts on silence that was ours, not theirs.
-3. **Persist verdicts on a schedule.** The "score 30 days ago" comparison re-runs the pipeline on an
-   earlier snapshot per request — fine for 480 events, wrong at volume. Scheduled runs would answer
-   the thing a CSM actually wants: *"three accounts dropped out of Healthy this week."*
-4. **Close the loop.** Let CSMs mark a risk acknowledged or wrong and store it — both the UX fix for
-   false positives and the labelled data step 1 needs.
-5. **Scale the data layer.** SQLite and a full rebuild are right at this size and honest about it. At
-   real volume this becomes an incremental warehouse job with the same stage boundaries.
+1. Fit the thresholds instead of calibrating them, once real renewal outcomes exist.
+2. Per-workspace ingestion-freshness monitoring, so a broken pipeline and a churning customer stop looking identical.
+3. Persist verdicts on a schedule instead of reconstructing history per request.
+4. Close the loop — let CSMs mark a risk acknowledged or wrong, and store it.
+5. Scale the data layer to an incremental warehouse job at real volume.
 
-Longer version, plus the open product questions: [ANALYSIS.md §13–14](ANALYSIS.md).
+Full reasoning, plus the open product questions: [ANALYSIS.md §13–14](ANALYSIS.md).
