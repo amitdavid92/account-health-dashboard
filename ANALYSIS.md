@@ -39,49 +39,78 @@ decline is either specific to that account or it is noise. That is the question 
 ## 2. Data quality
 
 The brief warns the export "wasn't cleaned up". It is worth stating plainly: **most of the expected
-problems are not present.** All thirteen checks are reported — including the ones that came back
-clean — because "no duplicates were found" and "duplicates were never looked for" are very different
-statements about a dataset, and only one of them earns trust in the numbers built on top.
+problems are not present.** All thirteen checks are reported, including the ones that came back
+clean, because "no duplicates were found" and "duplicates were never looked for" are very different
+statements about a dataset.
 
-| # | Check | Result | Decision |
+### How the checks work
+
+Every check runs inside `normalize()` in [src/lib/normalize.ts](src/lib/normalize.ts) and writes one
+finding to the data-quality report. Codes such as `plan_drift` identify those findings; they are not
+function names. The examples are synthetic and show what the current code does.
+
+| # | What do we check? | Small example → handling | Code reference |
 |---|---|---|---|
-| 1 | Missing or malformed fields | **0** in either file | Verified, not assumed |
-| 2 | Duplicate `event_id` | **0** | Verified |
-| 3 | Replayed rows (same workspace + user + type + timestamp, new id) | **0** | Verified; the dedup runs anyway, since an export replay must never inflate an account |
-| 4 | Company names across the two files | **0 raw-string differences** — every event's `company_name` is byte-identical to the account row it joins to, so canonicalization changes no outcome here. Counted, not assumed | Joined on a canonical key rather than the raw string, so the assumption is explicit and swappable for fuzzy matching in one place. Nothing detects a company filed under two genuinely different names |
-| 5 | Accounts with no events | **0** — the quietest has 3 | The zero-event path is still implemented; see §8 |
-| 6 | Events with no matching account | **0** | Orphan handling still implemented and reported |
-| 7 | Workspaces claimed by two companies | **0** | Mapping is unambiguous |
-| 8 | Users appearing under two accounts | **0** `user_id`s span two companies | Distinct-user counts per account cannot double-count a person. Says nothing about one human holding two `user_id`s — the export carries no identity to check that against |
-| 9 | Timestamps | All parse as ISO-8601 UTC | "Today" is pinned to the latest event, never the clock. **There is no independent future-date check**: comparing events against an anchor derived from those same events is circular, and the export carries no external reference time |
-| 10 | **Accounts with more than one workspace** | **3** — Alderman Freight (17+18), Brightside Logistics (21+15), Cobalt Financial (29+11). Computed per account: **no `user_id` appears in two of a company's workspaces on this export**, so the roll-up and a per-workspace sum agree here | Roll up to the account, deduplicate users anyway, show the split in the drill-down |
-| 11 | **`plan_tier` drift between the files** | **2** — Marlowe & Reed and Thistle & Vine Events are Enterprise in `accounts.json` but Pro on their most recent events | See below |
-| 12 | **Hour-of-day distribution** | **10 of the 24 UTC hours (09:00–19:00) contain no events at all**, measured across the window; the other 14 carry 480 events fairly evenly | See below |
-| 13 | **Substituted values** | **0** — every `plan_tier` is one of Free/Pro/Enterprise and every `arr_usd` is finite and non-negative, so no fallback was applied | The normalizer substitutes a default rather than dropping the row (plan → Free, ARR → 0). When that happens the affected accounts are named in the report, never silently corrected |
+| 1 | Is a required event field missing, or is the event type unknown? | A row with `user_id: ""` or `event_type: "click"` → drop the row and count it. | `missing_fields` · [normalize.ts](src/lib/normalize.ts) |
+| 2 | Does an event ID repeat? | Two otherwise valid rows have `event_id: e1` → keep the first accepted event, drop the second. | `duplicate_event_ids` · [normalize.ts](src/lib/normalize.ts) |
+| 3 | Is the same event recorded twice under different IDs? | `e1` and `e2` share workspace, user and type; timestamps `…20:00:00Z` and `…20:00:00.000Z` → both parse to the same time, so keep `e1` and drop `e2`. | `duplicate_rows` · [normalize.ts](src/lib/normalize.ts) |
+| 4 | Does an event's company name differ from its account's name? | Account `Acme Inc`, event `ACME, Inc.` → both reduce to the key `acme`, so the event joins; the name difference is flagged. | `company_name_join` · [normalize.ts](src/lib/normalize.ts) |
+| 5 | Does an account have no events? | An account row exists but has 0 accepted events → keep the account and tier it No Data, never At Risk. | `accounts_without_events` · [normalize.ts](src/lib/normalize.ts) |
+| 6 | Does an event belong to a company with no account row? | An event for `Ghost Ltd`, which is not in `accounts.json` → drop it from scoring; report the event count and the company name. | `orphan_events` · [normalize.ts](src/lib/normalize.ts) |
+| 7 | Is one workspace used by two companies? | `ws_9` has events for companies A and B → each event stays with its own company; the workspace is flagged. | `shared_workspaces` · [normalize.ts](src/lib/normalize.ts) |
+| 8 | Does one user ID appear under two companies? | `u7` has events at A and B → `u7` counts as one user at each account; flagged only. | `cross_account_users` · [normalize.ts](src/lib/normalize.ts) |
+| 9 | Can the timestamp be parsed? | `"not-a-date"` → `Date.parse` rejects it, so drop the row. `2030-01-01T00:00:00Z` → accepted, because there is no format or future-date check. | `timestamp_anomalies` · [normalize.ts](src/lib/normalize.ts) |
+| 10 | Does an account use more than one workspace? | Account A has `ws_1` {u1, u2} and `ws_2` {u2} → roll up to one account with 2 distinct users; the account is listed. | `multi_workspace_accounts` · [normalize.ts](src/lib/normalize.ts) |
+| 11 | Does the latest event's plan differ from the account's plan? | Account: Enterprise; latest event: Pro → flag the mismatch (labelled downgrade); `accounts.json` stays the displayed plan and ARR. | `plan_drift` · [normalize.ts](src/lib/normalize.ts) |
+| 12 | Are some UTC hours of the day empty? | Events occur only at 02:00 and 21:00 UTC → the other 22 hours are reported as empty; nothing is dropped. | `hour_of_day_gap` · [normalize.ts](src/lib/normalize.ts) |
+| 13 | Did a value need a fallback? | Account plan `Platinum` → Free. ARR `-50` → 0, `"abc"` → 0, `"1200"` → 1200. Event plan `Diamond` → the account's plan. Keep the row and report the substitution. Account-field fallbacks name the account; event-plan fallbacks are counted. | `substituted_values` · [normalize.ts](src/lib/normalize.ts) |
 
-### On the plan drift (#11)
+### What we found in this export
 
-Ordering the events chronologically settles it: both accounts show Enterprise events first and Pro
-events only at the end of the window. These are **downgrades that happened**, not export noise.
+The export has 25 accounts and 480 events. All 480 events were accepted, and 0 were dropped.
 
-The decision: `accounts.json` remains the source of truth for the displayed plan and ARR, the event
-stream is treated as plan history, and the disagreement is raised as a **commercial risk flag**. It
-is genuine signal — a customer who downsized mid-quarter is a fact a CSM should never be surprised
-by — but it is not *usage*, so it never touches the health score. Thistle & Vine is Healthy on every
-usage measure and still carries a High plan-downgrade flag; both statements are true and the
-dashboard shows both.
+| # | Check | Finding |
+|---|---|---|
+| 1 | Required event fields | No event rows were missing a required field or had an unknown event type. |
+| 2 | Duplicate event IDs | No duplicate event IDs were found. |
+| 3 | Same event under different IDs | No two events share workspace, user, event type and timestamp. |
+| 4 | Company-name consistency | Every event's company name matches its account's name exactly after trimming whitespace. |
+| 5 | Accounts with no events | Every account has at least one accepted event. |
+| 6 | Events with no account | Every event's company has a row in `accounts.json`. |
+| 7 | Workspace used by two companies | No workspace has events from more than one company. |
+| 8 | User ID under two companies | No user ID appears under more than one company. |
+| 9 | Timestamp parsing | Every event timestamp parses; no events were dropped for this reason. |
+| 10 | Accounts with several workspaces | Three accounts have more than one workspace. Their events are rolled up per account; this is expected, not invalid. |
+| 11 | Plan drift | Two accounts have a mismatch between the account plan and the latest event plan. |
+| 12 | Hour-of-day coverage | Ten UTC hours contain no events anywhere in the export. |
+| 13 | Fallback values | No values required a fallback. |
 
-### On the hour-of-day gap (#12)
+- **#10:** Alderman Freight, Brightside Logistics and Cobalt Financial each have two workspaces. No
+  users overlap between these workspaces in this export. The pipeline deduplicates users per account
+  regardless.
+- **#11:** Marlowe & Reed and Thistle & Vine Events are Enterprise in `accounts.json` but Pro on
+  their latest event.
+- **#12:** The empty hours form one block, 09:00–18:59 UTC.
 
-Counting events by UTC hour over the whole window gives 14 hours carrying 25–40 events each and a
-contiguous run of 10 hours — 09:00 through 19:00 — carrying zero. A dead band that wide and that
-clean is not what a real customer base produces. What *caused* it is not something this export lets
-us determine, so the report states the measurement and stops there.
+**Additional check: `invalid_account_rows`.** Account rows with no `company_name`, or whose
+canonical key repeats an earlier row, are dropped. The report lists this as an error only when at
+least one such row exists, so it is absent on this export and is not numbered with the 13 checks
+above.
 
-The consequence is a hard constraint either way: **no hour-of-day or day-of-week analysis is built
-anywhere in this dashboard.** The data would happily support a "peak usage hours" chart, and that
-chart would be reporting an artifact as customer behaviour. Daily and weekly aggregates are
-unaffected, since they roll up across the gap.
+### Important limitations
+
+- **#1 is not full schema validation:** account rows only need a `company_name`, and other missing
+  account fields get silent defaults. A clean #1 means the event rows are usable, not that both files
+  are complete.
+- **#9 does not enforce ISO-8601 UTC or detect future dates:** it only checks that `Date.parse`
+  accepts the value. Zoneless or loosely formatted timestamps would be accepted without a warning.
+- **#11 does not prove a real downgrade or when it happened:** it compares only the latest event's
+  plan with the account row. A mismatch is a prompt to confirm the plan, not evidence of a change.
+- **#12 does not explain why those hours are empty:** the export gives no cause. Daily and weekly
+  totals cannot be assumed unaffected, because missing hours may mean missing events.
+- **#4 does not catch one company under two different names:** the canonical key only absorbs case,
+  punctuation, `&` and legal suffixes, and it can merge names like `Acme Co` and `Acme`. Name
+  matching is only as good as that key.
 
 ---
 
