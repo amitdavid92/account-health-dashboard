@@ -39,31 +39,31 @@ decline is either specific to that account or it is noise. That is the question 
 ## 2. Data quality
 
 The brief warns the export "wasn't cleaned up". It is worth stating plainly: **most of the expected
-problems are not present.** All thirteen checks are reported, including the ones that came back
-clean, because "no duplicates were found" and "duplicates were never looked for" are very different
+problems are not present.** All 13 checks are reported, including the ones that came back clean,
+because "no duplicates were found" and "duplicates were never looked for" are very different
 statements about a dataset.
 
 ### How the checks work
 
-Every check runs inside `normalize()` in [src/lib/normalize.ts](src/lib/normalize.ts) and writes one
+Every check runs inside `normalize()` in [src/lib/normalize.ts](src/lib/normalize.ts) and writes 1
 finding to the data-quality report. Codes such as `plan_drift` identify those findings; they are not
 function names. The examples are synthetic and show what the current code does.
 
-| # | What do we check? | Small example → handling | Code reference |
+| # | What do we check? | Example and handling | Code reference |
 |---|---|---|---|
-| 1 | Is a required event field missing, or is the event type unknown? | A row with `user_id: ""` or `event_type: "click"` → drop the row and count it. | `missing_fields` · [normalize.ts](src/lib/normalize.ts) |
-| 2 | Does an event ID repeat? | Two otherwise valid rows have `event_id: e1` → keep the first accepted event, drop the second. | `duplicate_event_ids` · [normalize.ts](src/lib/normalize.ts) |
-| 3 | Is the same event recorded twice under different IDs? | `e1` and `e2` share workspace, user and type; timestamps `…20:00:00Z` and `…20:00:00.000Z` → both parse to the same time, so keep `e1` and drop `e2`. | `duplicate_rows` · [normalize.ts](src/lib/normalize.ts) |
-| 4 | Does an event's company name differ from its account's name? | Account `Acme Inc`, event `ACME, Inc.` → both reduce to the key `acme`, so the event joins; the name difference is flagged. | `company_name_join` · [normalize.ts](src/lib/normalize.ts) |
-| 5 | Does an account have no events? | An account row exists but has 0 accepted events → keep the account and tier it No Data, never At Risk. | `accounts_without_events` · [normalize.ts](src/lib/normalize.ts) |
-| 6 | Does an event belong to a company with no account row? | An event for `Ghost Ltd`, which is not in `accounts.json` → drop it from scoring; report the event count and the company name. | `orphan_events` · [normalize.ts](src/lib/normalize.ts) |
-| 7 | Is one workspace used by two companies? | `ws_9` has events for companies A and B → each event stays with its own company; the workspace is flagged. | `shared_workspaces` · [normalize.ts](src/lib/normalize.ts) |
-| 8 | Does one user ID appear under two companies? | `u7` has events at A and B → `u7` counts as one user at each account; flagged only. | `cross_account_users` · [normalize.ts](src/lib/normalize.ts) |
-| 9 | Can the timestamp be parsed? | `"not-a-date"` → `Date.parse` rejects it, so drop the row. `2030-01-01T00:00:00Z` → accepted, because there is no format or future-date check. | `timestamp_anomalies` · [normalize.ts](src/lib/normalize.ts) |
-| 10 | Does an account use more than one workspace? | Account A has `ws_1` {u1, u2} and `ws_2` {u2} → roll up to one account with 2 distinct users; the account is listed. | `multi_workspace_accounts` · [normalize.ts](src/lib/normalize.ts) |
-| 11 | Does the latest event's plan differ from the account's plan? | Account: Enterprise; latest event: Pro → flag the mismatch (labelled downgrade); `accounts.json` stays the displayed plan and ARR. | `plan_drift` · [normalize.ts](src/lib/normalize.ts) |
-| 12 | Are some UTC hours of the day empty? | Events occur only at 02:00 and 21:00 UTC → the other 22 hours are reported as empty; nothing is dropped. | `hour_of_day_gap` · [normalize.ts](src/lib/normalize.ts) |
-| 13 | Did a value need a fallback? | Account plan `Platinum` → Free. ARR `-50` → 0, `"abc"` → 0, `"1200"` → 1200. Event plan `Diamond` → the account's plan. Keep the row and report the substitution. Account-field fallbacks name the account; event-plan fallbacks are counted. | `substituted_values` · [normalize.ts](src/lib/normalize.ts) |
+| 1 | Is a required event field missing, or is the event type unknown? | **Input:** A row with `user_id: ""` or `event_type: "click"`.<br>**Action:** Drop the row and count it. | `missing_fields` · [normalize.ts](src/lib/normalize.ts) |
+| 2 | Does an event ID repeat? | **Input:** 2 otherwise valid rows with `event_id: e1`.<br>**Action:** Keep the first accepted row; drop the second. | `duplicate_event_ids` · [normalize.ts](src/lib/normalize.ts) |
+| 3 | Is the same event recorded twice under different IDs? | **Input:** `e1` and `e2` with the same workspace, user and type, at `…20:00:00Z` and `…20:00:00.000Z`.<br>**Action:** The timestamps parse to the same time, so keep `e1` and drop `e2`. | `duplicate_rows` · [normalize.ts](src/lib/normalize.ts) |
+| 4 | Does an event's company name differ from its account's name? | **Input:** Account `Acme Inc`; event `ACME, Inc.`.<br>**Action:** Both reduce to the key `acme`, so join the event and flag the name difference. | `company_name_join` · [normalize.ts](src/lib/normalize.ts) |
+| 5 | Does an account have no events? | **Input:** An account row with 0 accepted events.<br>**Action:** Keep the account and tier it No Data, never At Risk. | `accounts_without_events` · [normalize.ts](src/lib/normalize.ts) |
+| 6 | Does an event belong to a company with no account row? | **Input:** An event for `Ghost Ltd`, which is not in `accounts.json`.<br>**Action:** Drop it from scoring; report the event count and the company name. | `orphan_events` · [normalize.ts](src/lib/normalize.ts) |
+| 7 | Is 1 workspace used by more than 1 company? | **Input:** `ws_9` has events for companies A and B.<br>**Action:** Keep each event with its own company; flag the workspace. | `shared_workspaces` · [normalize.ts](src/lib/normalize.ts) |
+| 8 | Does 1 user ID appear under more than 1 company? | **Input:** `u7` has events at A and B.<br>**Action:** Count `u7` as 1 user at each account; flag only. | `cross_account_users` · [normalize.ts](src/lib/normalize.ts) |
+| 9 | Can the timestamp be parsed? | **Input:** `"not-a-date"`; `2030-01-01T00:00:00Z`.<br>**Action:** Drop the first, because `Date.parse` rejects it. Accept the second: there is no format check and no independent future-date check. | `timestamp_anomalies` · [normalize.ts](src/lib/normalize.ts) |
+| 10 | Does an account use more than 1 workspace? | **Input:** Account A has `ws_1` {u1, u2} and `ws_2` {u2}.<br>**Action:** Roll up to 1 account with 2 distinct users; list the account. | `multi_workspace_accounts` · [normalize.ts](src/lib/normalize.ts) |
+| 11 | Does the latest event's plan differ from the account's plan? | **Input:** Account: `Enterprise`; latest event: `Pro`.<br>**Action:** Flag the mismatch; retain the account record as the source for displayed plan and ARR. | `plan_drift` · [normalize.ts](src/lib/normalize.ts) |
+| 12 | Are some UTC hours of the day empty? | **Input:** Events only at 02:00 and 21:00 UTC.<br>**Action:** Report the other 22 hours as empty; drop nothing. | `hour_of_day_gap` · [normalize.ts](src/lib/normalize.ts) |
+| 13 | Did a value need a fallback? | **Input:** Account plan `Platinum`; ARR `-50`, `"abc"` or `"1200"`; event plan `Diamond`.<br>**Action:** Plan → Free; ARR → 0, 0 or 1200; event plan → the account's plan. Keep the row; account-field fallbacks name the account, event-plan fallbacks are counted. | `substituted_values` · [normalize.ts](src/lib/normalize.ts) |
 
 ### What we found in this export
 
@@ -71,26 +71,26 @@ The export has 25 accounts and 480 events. All 480 events were accepted, and 0 w
 
 | # | Check | Finding |
 |---|---|---|
-| 1 | Required event fields | No event rows were missing a required field or had an unknown event type. |
-| 2 | Duplicate event IDs | No duplicate event IDs were found. |
-| 3 | Same event under different IDs | No two events share workspace, user, event type and timestamp. |
-| 4 | Company-name consistency | Every event's company name matches its account's name exactly after trimming whitespace. |
-| 5 | Accounts with no events | Every account has at least one accepted event. |
-| 6 | Events with no account | Every event's company has a row in `accounts.json`. |
-| 7 | Workspace used by two companies | No workspace has events from more than one company. |
-| 8 | User ID under two companies | No user ID appears under more than one company. |
-| 9 | Timestamp parsing | Every event timestamp parses; no events were dropped for this reason. |
-| 10 | Accounts with several workspaces | Three accounts have more than one workspace. Their events are rolled up per account; this is expected, not invalid. |
-| 11 | Plan drift | Two accounts have a mismatch between the account plan and the latest event plan. |
-| 12 | Hour-of-day coverage | Ten UTC hours contain no events anywhere in the export. |
-| 13 | Fallback values | No values required a fallback. |
+| 1 | Required event fields | **0 events** with missing required fields or unknown event types. |
+| 2 | Duplicate event IDs | **0 duplicate event IDs**. |
+| 3 | Same event under different IDs | **0 logical duplicate events** with matching workspace, user, type and parsed timestamp. |
+| 4 | Company-name consistency | **0 company-name differences** between accepted events and their matched accounts after trimming. |
+| 5 | Accounts with no events | **0 accounts** without accepted events. |
+| 6 | Events with no account | **0 events** without a matching account. |
+| 7 | Workspace used by multiple companies | **0 workspaces** associated with multiple accounts. |
+| 8 | User ID under multiple companies | **0 user IDs** appearing under multiple accounts. |
+| 9 | Timestamp parsing | **0 unparseable timestamps**. |
+| 10 | Accounts with several workspaces | **3 accounts** with multiple workspaces. |
+| 11 | Plan drift | **2 accounts** with a mismatch between the account plan and the latest event plan. |
+| 12 | Hour-of-day coverage | **10 UTC hours** without events anywhere in the export. |
+| 13 | Fallback values | **0 substituted values**. |
 
-- **#10:** Alderman Freight, Brightside Logistics and Cobalt Financial each have two workspaces. No
-  users overlap between these workspaces in this export. The pipeline deduplicates users per account
-  regardless.
+- **#10:** Alderman Freight, Brightside Logistics and Cobalt Financial each have 2 workspaces. This
+  is expected, not invalid: their events roll up per account. 0 users overlap between these
+  workspaces in this export, and the pipeline deduplicates users per account regardless.
 - **#11:** Marlowe & Reed and Thistle & Vine Events are Enterprise in `accounts.json` but Pro on
   their latest event.
-- **#12:** The empty hours form one block, 09:00–18:59 UTC.
+- **#12:** The 10 empty hours form 1 block, 09:00–18:59 UTC.
 
 **Additional check: `invalid_account_rows`.** Account rows with no `company_name`, or whose
 canonical key repeats an earlier row, are dropped. The report lists this as an error only when at
@@ -108,7 +108,7 @@ above.
   plan with the account row. A mismatch is a prompt to confirm the plan, not evidence of a change.
 - **#12 does not explain why those hours are empty:** the export gives no cause. Daily and weekly
   totals cannot be assumed unaffected, because missing hours may mean missing events.
-- **#4 does not catch one company under two different names:** the canonical key only absorbs case,
+- **#4 does not catch a company filed under 2 different names:** the canonical key only absorbs case,
   punctuation, `&` and legal suffixes, and it can merge names like `Acme Co` and `Acme`. Name
   matching is only as good as that key.
 
